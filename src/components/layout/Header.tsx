@@ -5,9 +5,14 @@ import { formatDateTime } from "../../utils/dateUtils";
 
 export const Header = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
-  const { vehicles, currentShift, soundEnabled, toggleSound, refreshData } = useStore();
+  const { vehicles, alarms, currentShift, soundEnabled, toggleSound, refreshData } = useStore();
 
-  const abnormalCount = vehicles.filter((v) => v.isAbnormal).length;
+  const falseAlarmVehicleIds = alarms
+    .filter((a) => a.status === "FALSE_ALARM")
+    .map((a) => a.vehicleId);
+  const abnormalCount = vehicles.filter(
+    (v) => v.isAbnormal && !falseAlarmVehicleIds.includes(v.id)
+  ).length;
   const totalVehicles = vehicles.length;
 
   useEffect(() => {

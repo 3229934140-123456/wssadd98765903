@@ -5,6 +5,7 @@ import { DoorTimeline } from "./DoorTimeline";
 import { TemperatureChart } from "./TemperatureChart";
 import { LocationTrack } from "./LocationTrack";
 import { DriverReport } from "./DriverReport";
+import { IncidentReview } from "./IncidentReview";
 import { getAbnormalTypeLabel, getAbnormalTypeColor, getAbnormalTypeBgColor } from "../../utils/statusUtils";
 import { getTimeAgo } from "../../utils/dateUtils";
 
@@ -16,9 +17,10 @@ export const DisposalPanel = () => {
     temperatureRecords,
     locationPoints,
     driverReports,
+    alarms,
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<"timeline" | "temperature" | "location" | "report">("timeline");
+  const [activeTab, setActiveTab] = useState<"timeline" | "temperature" | "location" | "report" | "review">("review");
   const [calling, setCalling] = useState<string | null>(null);
 
   const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
@@ -39,6 +41,7 @@ export const DisposalPanel = () => {
   const tempRecords = temperatureRecords[selectedVehicle.id] || [];
   const locations = locationPoints[selectedVehicle.id] || [];
   const reports = driverReports[selectedVehicle.id] || [];
+  const alarm = alarms.find((a) => a.vehicleId === selectedVehicle.id);
 
   const statusColor = getAbnormalTypeColor(selectedVehicle.abnormalType);
   const statusBg = getAbnormalTypeBgColor(selectedVehicle.abnormalType);
@@ -51,11 +54,12 @@ export const DisposalPanel = () => {
   };
 
   const tabs = [
-    { id: "timeline", label: "门磁时间线", icon: "⏱" },
-    { id: "temperature", label: "温度曲线", icon: "🌡" },
-    { id: "location", label: "定位轨迹", icon: "📍" },
-    { id: "report", label: "司机上报", icon: "📝" },
-  ] as const;
+    { id: "review" as const, label: "异常复盘", icon: "🔍" },
+    { id: "timeline" as const, label: "门磁时间线", icon: "⏱" },
+    { id: "temperature" as const, label: "温度曲线", icon: "🌡" },
+    { id: "location" as const, label: "定位轨迹", icon: "📍" },
+    { id: "report" as const, label: "司机上报", icon: "📝" },
+  ];
 
   return (
     <div className="h-full flex flex-col bg-slate-900/30">
@@ -186,6 +190,9 @@ export const DisposalPanel = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
+        {activeTab === "review" && (
+          <IncidentReview events={events} tempRecords={tempRecords} locations={locations} alarm={alarm} />
+        )}
         {activeTab === "timeline" && <DoorTimeline events={events} />}
         {activeTab === "temperature" && <TemperatureChart records={tempRecords} />}
         {activeTab === "location" && <LocationTrack points={locations} />}

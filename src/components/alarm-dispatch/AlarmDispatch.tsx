@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AlertTriangle, Send, History, User, Clock } from "lucide-react";
 import { useStore } from "../../store/useStore";
 import { StatusSelector } from "./StatusSelector";
@@ -23,12 +23,24 @@ export const AlarmDispatch = () => {
   const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
   const alarm = alarms.find((a) => a.vehicleId === selectedVehicleId);
 
+  useEffect(() => {
+    if (alarm) {
+      setStatus(alarm.status);
+      setRemark(alarm.remark);
+      setReminderMinutes(null);
+      setShowSuccess(false);
+    } else {
+      setStatus("PENDING_VERIFY");
+      setRemark("");
+      setReminderMinutes(null);
+    }
+  }, [selectedVehicleId, alarm?.id]);
+
   const handleSubmit = () => {
     if (!alarm) return;
 
     updateAlarmStatus(alarm.id, status, remark, reminderMinutes);
     setShowSuccess(true);
-    setRemark("");
 
     setTimeout(() => {
       setShowSuccess(false);
@@ -52,6 +64,41 @@ export const AlarmDispatch = () => {
         <div className="text-center text-slate-500">
           <AlertTriangle className="w-12 h-12 mx-auto mb-2 opacity-50" />
           <p>该车辆当前无告警</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (alarm.status === "FALSE_ALARM") {
+    return (
+      <div className="h-full flex flex-col bg-slate-900/50">
+        <div className="p-4 border-b border-slate-700">
+          <h2 className="text-white font-bold text-lg flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-slate-400" />
+            告警分派
+          </h2>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-full bg-gray-500/20 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-gray-400 font-bold text-lg mb-2">已标记为误报</h3>
+            <p className="text-slate-500 text-sm">
+              {selectedVehicle.plateNumber} 的门磁异常已确认为误报，
+              <br />
+              不再计入异常统计。
+            </p>
+            {alarm.remark && (
+              <div className="mt-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700 text-left">
+                <span className="text-slate-500 text-xs">误报说明：</span>
+                <p className="text-slate-300 text-sm mt-1">{alarm.remark}</p>
+              </div>
+            )}
+            <div className="mt-3 text-slate-500 text-xs">
+              处理人：{alarm.handler} · {getTimeAgo(alarm.createdAt)}
+            </div>
+          </div>
         </div>
       </div>
     );

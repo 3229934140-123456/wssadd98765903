@@ -1,4 +1,4 @@
-import { CheckSquare, Square, AlertTriangle, Truck } from "lucide-react";
+import { CheckSquare, Square, AlertTriangle, Truck, Clock, MapPin, User } from "lucide-react";
 import { Alarm, Vehicle } from "../../types";
 import {
   getAbnormalTypeLabel,
@@ -6,7 +6,7 @@ import {
   getAlarmStatusLabel,
   getAlarmStatusColor,
 } from "../../utils/statusUtils";
-import { getTimeAgo } from "../../utils/dateUtils";
+import { getTimeAgo, formatDateTime } from "../../utils/dateUtils";
 
 interface HandoverItemData {
   alarm: Alarm;
@@ -64,6 +64,9 @@ export const UnclosedList = ({ items, onToggleCheck, onUpdateNotes }: UnclosedLi
                 >
                   {vehicle.plateNumber}
                 </span>
+                <span className="px-2 py-0.5 text-xs rounded font-mono font-semibold bg-cyan-500/20 text-cyan-400">
+                  {vehicle.tripNo}
+                </span>
                 <span
                   className="px-2 py-0.5 text-xs rounded font-semibold"
                   style={{
@@ -88,10 +91,23 @@ export const UnclosedList = ({ items, onToggleCheck, onUpdateNotes }: UnclosedLi
                 {alarm.remark || "暂无处置说明"}
               </p>
 
-              <div className="flex items-center gap-4 text-xs text-slate-500 mb-3">
-                <span>司机：{vehicle.driverName}</span>
-                <span>线路：{vehicle.route}</span>
-                <span>{getTimeAgo(alarm.createdAt)}</span>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  线路：{vehicle.route}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  预计到仓：{formatDateTime(vehicle.estimatedArrival)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  责任人：{alarm.handler || "待分派"}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Truck className="w-3 h-3" />
+                  司机：{vehicle.driverName}
+                </span>
               </div>
 
               <div>

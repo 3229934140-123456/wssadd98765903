@@ -14,6 +14,7 @@ export type AlarmStatus =
 export interface Vehicle {
   id: string;
   plateNumber: string;
+  tripNo: string;
   driverName: string;
   driverPhone: string;
   carrier: string;
@@ -23,12 +24,13 @@ export interface Vehicle {
   abnormalType: AbnormalType;
   isAbnormal: boolean;
   lastUpdate: string;
+  estimatedArrival: string;
 }
 
 export interface DoorEvent {
   id: string;
   vehicleId: string;
-  eventType: "OPEN" | "CLOSE" | "ABNORMAL";
+  eventType: "OPEN" | "CLOSE" | "ABNORMAL" | "OFFLINE";
   timestamp: string;
   location: string;
   description: string;
@@ -87,6 +89,11 @@ export interface HandoverItem {
   description: string;
   isChecked: boolean;
   notes: string;
+  tripNo: string;
+  route: string;
+  estimatedArrival: string;
+  handler: string;
+  followUpNotes: string[];
 }
 
 export interface AppState {

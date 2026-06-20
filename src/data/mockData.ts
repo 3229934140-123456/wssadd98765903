@@ -15,6 +15,7 @@ export const mockVehicles: Vehicle[] = [
   {
     id: "v001",
     plateNumber: "京A·88888",
+    tripNo: "CC-20260621-001",
     driverName: "刘师傅",
     driverPhone: "138****1234",
     carrier: "顺丰冷链",
@@ -24,10 +25,12 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "DOOR_OPEN_WHILE_DRIVING",
     isAbnormal: true,
     lastUpdate: generateDateTime(0.1),
+    estimatedArrival: generateDateTime(-2),
   },
   {
     id: "v002",
     plateNumber: "沪B·66666",
+    tripNo: "CC-20260621-002",
     driverName: "陈师傅",
     driverPhone: "139****5678",
     carrier: "顺丰冷链",
@@ -37,10 +40,12 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "DOOR_OPEN_TOO_LONG",
     isAbnormal: true,
     lastUpdate: generateDateTime(0.5),
+    estimatedArrival: generateDateTime(-1),
   },
   {
     id: "v003",
     plateNumber: "粤C·33333",
+    tripNo: "CC-20260621-003",
     driverName: "赵师傅",
     driverPhone: "137****9012",
     carrier: "京东物流",
@@ -50,10 +55,12 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "SENSOR_OFFLINE",
     isAbnormal: true,
     lastUpdate: generateDateTime(1.2),
+    estimatedArrival: generateDateTime(-3),
   },
   {
     id: "v004",
     plateNumber: "津D·22222",
+    tripNo: "CC-20260621-004",
     driverName: "孙师傅",
     driverPhone: "136****3456",
     carrier: "京东物流",
@@ -63,10 +70,12 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "FREQUENT_OPEN_CLOSE",
     isAbnormal: true,
     lastUpdate: generateDateTime(0.3),
+    estimatedArrival: generateDateTime(-0.5),
   },
   {
     id: "v005",
     plateNumber: "苏E·11111",
+    tripNo: "CC-20260621-005",
     driverName: "周师傅",
     driverPhone: "135****7890",
     carrier: "中通冷链",
@@ -76,10 +85,12 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "NORMAL",
     isAbnormal: false,
     lastUpdate: generateDateTime(0.2),
+    estimatedArrival: generateDateTime(-4),
   },
   {
     id: "v006",
     plateNumber: "浙F·99999",
+    tripNo: "CC-20260621-006",
     driverName: "吴师傅",
     driverPhone: "134****2345",
     carrier: "中通冷链",
@@ -89,10 +100,12 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "NORMAL",
     isAbnormal: false,
     lastUpdate: generateDateTime(0.1),
+    estimatedArrival: generateDateTime(0),
   },
   {
     id: "v007",
     plateNumber: "鲁G·77777",
+    tripNo: "CC-20260621-007",
     driverName: "郑师傅",
     driverPhone: "133****6789",
     carrier: "圆通冷链",
@@ -102,10 +115,12 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "NORMAL",
     isAbnormal: false,
     lastUpdate: generateDateTime(0.4),
+    estimatedArrival: generateDateTime(-5),
   },
   {
     id: "v008",
     plateNumber: "川H·55555",
+    tripNo: "CC-20260621-008",
     driverName: "冯师傅",
     driverPhone: "132****0123",
     carrier: "圆通冷链",
@@ -115,6 +130,7 @@ export const mockVehicles: Vehicle[] = [
     abnormalType: "NORMAL",
     isAbnormal: false,
     lastUpdate: generateDateTime(0.2),
+    estimatedArrival: generateDateTime(-6),
   },
 ];
 
@@ -213,6 +229,25 @@ const generateDoorEvents = (vehicleId: string, abnormalType: AbnormalType): Door
         timestamp: generateDateTime(0.3),
         location: "香港边界",
         description: "异常：30分钟内车门开合已达8次",
+      }
+    );
+  } else if (abnormalType === "SENSOR_OFFLINE") {
+    baseEvents.push(
+      {
+        id: `${vehicleId}-d4`,
+        vehicleId,
+        eventType: "CLOSE",
+        timestamp: generateDateTime(3.5),
+        location: "天津段",
+        description: "最后一次正常关门信号",
+      },
+      {
+        id: `${vehicleId}-d5`,
+        vehicleId,
+        eventType: "OFFLINE",
+        timestamp: generateDateTime(1.2),
+        location: "徐州段",
+        description: "门磁设备信号丢失，最后心跳时间1小时前",
       }
     );
   }

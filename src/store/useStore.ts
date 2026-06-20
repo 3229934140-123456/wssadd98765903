@@ -45,7 +45,15 @@ interface AppStore {
   createHandover: (
     outgoingPerson: string,
     incomingPerson: string,
-    items: { alarmId: string; description: string; notes: string }[],
+    items: {
+      alarmId: string;
+      description: string;
+      notes: string;
+      tripNo: string;
+      route: string;
+      estimatedArrival: string;
+      handler: string;
+    }[],
     remarks: string
   ) => void;
   toggleSound: () => void;
@@ -129,6 +137,11 @@ export const useStore = create<AppStore>((set, get) => ({
       description: item.description,
       isChecked: true,
       notes: item.notes,
+      tripNo: item.tripNo,
+      route: item.route,
+      estimatedArrival: item.estimatedArrival,
+      handler: item.handler,
+      followUpNotes: [],
     }));
 
     const handovers = [...get().handovers, newHandover];

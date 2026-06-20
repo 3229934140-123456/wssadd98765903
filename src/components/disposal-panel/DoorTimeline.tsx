@@ -1,4 +1,4 @@
-import { Clock, DoorOpen, DoorClosed, AlertTriangle } from "lucide-react";
+import { Clock, DoorOpen, DoorClosed, AlertTriangle, WifiOff } from "lucide-react";
 import { DoorEvent } from "../../types";
 import { formatDateTime } from "../../utils/dateUtils";
 
@@ -15,6 +15,8 @@ export const DoorTimeline = ({ events }: DoorTimelineProps) => {
         return <DoorClosed className="w-4 h-4 text-emerald-400" />;
       case "ABNORMAL":
         return <AlertTriangle className="w-4 h-4 text-red-400" />;
+      case "OFFLINE":
+        return <WifiOff className="w-4 h-4 text-gray-400" />;
       default:
         return <Clock className="w-4 h-4 text-slate-400" />;
     }
@@ -28,6 +30,8 @@ export const DoorTimeline = ({ events }: DoorTimelineProps) => {
         return "bg-emerald-500/20 border-emerald-500/30";
       case "ABNORMAL":
         return "bg-red-500/20 border-red-500/30";
+      case "OFFLINE":
+        return "bg-gray-500/20 border-gray-500/30";
       default:
         return "bg-slate-500/20 border-slate-500/30";
     }
@@ -41,6 +45,8 @@ export const DoorTimeline = ({ events }: DoorTimelineProps) => {
         return "车门关闭";
       case "ABNORMAL":
         return "异常事件";
+      case "OFFLINE":
+        return "门磁离线";
       default:
         return "未知事件";
     }
@@ -59,7 +65,7 @@ export const DoorTimeline = ({ events }: DoorTimelineProps) => {
             <div key={event.id} className="relative pl-10">
               <div
                 className={`absolute left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center ${getEventBg(event.eventType)} ${
-                  event.eventType === "ABNORMAL" ? "animate-pulse" : ""
+                  event.eventType === "ABNORMAL" || event.eventType === "OFFLINE" ? "animate-pulse" : ""
                 }`}
               >
                 {getEventIcon(event.eventType)}
