@@ -1,8 +1,27 @@
 import { useState, useEffect } from "react";
-import { AlertTriangle, Send, History, User, Clock, ChevronDown } from "lucide-react";
+import {
+  AlertTriangle,
+  Send,
+  History,
+  User,
+  Clock,
+  ChevronDown,
+  Phone,
+  Warehouse,
+  MessageSquare,
+  RefreshCw,
+  Bell,
+  BellOff,
+  BellRing,
+  Megaphone,
+  UserCheck,
+  DoorClosed,
+  XCircle,
+  CheckCircle2,
+} from "lucide-react";
 import { useStore } from "../../store/useStore";
 import { StatusSelector } from "./StatusSelector";
-import { AlarmStatus } from "../../types";
+import { AlarmStatus, DisposalAction } from "../../types";
 import {
   getAbnormalTypeLabel,
   getAbnormalTypeColor,
@@ -38,8 +57,110 @@ const PRESET_OPTIONS: { label: string; value: number | null }[] = [
   { label: "明天同一时间", value: 1440 },
 ];
 
+const getActionVisual = (action: DisposalAction) => {
+  switch (action.actionType) {
+    case "CALL_DRIVER":
+      return {
+        icon: <Phone className="w-3.5 h-3.5 text-blue-400" />,
+        badge: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+        label: "拨打电话",
+      };
+    case "NOTIFY_WAREHOUSE":
+      return {
+        icon: <Warehouse className="w-3.5 h-3.5 text-purple-400" />,
+        badge: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+        label: "通知仓库",
+      };
+    case "SEND_MESSAGE":
+      return {
+        icon: <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />,
+        badge: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+        label: "发送消息",
+      };
+    case "STATUS_CHANGE": {
+      const st = action.subType;
+      if (st === "FALSE_ALARM") {
+        return {
+          icon: <XCircle className="w-3.5 h-3.5 text-gray-400" />,
+          badge: "bg-gray-500/20 text-gray-400 border-gray-500/30",
+          label: "标记误报",
+        };
+      }
+      if (st === "NEED_QC") {
+        return {
+          icon: <AlertTriangle className="w-3.5 h-3.5 text-orange-400" />,
+          badge: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+          label: "转质检",
+        };
+      }
+      return {
+        icon: <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />,
+        badge: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+        label: "状态变更",
+      };
+    }
+    case "REMINDER_CHANGE": {
+      const kind = action.subType;
+      if (kind === "CLEARED") {
+        return {
+          icon: <BellOff className="w-3.5 h-3.5 text-slate-400" />,
+          badge: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+          label: "清除提醒",
+        };
+      }
+      if (kind === "CHANGED") {
+        return {
+          icon: <BellRing className="w-3.5 h-3.5 text-blue-400" />,
+          badge: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+          label: "改新提醒",
+        };
+      }
+      return {
+        icon: <Bell className="w-3.5 h-3.5 text-cyan-400" />,
+        badge: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+        label: "保留提醒",
+      };
+    }
+    case "FOLLOW_UP": {
+      const res = action.subType;
+      if (res === "URGED") {
+        return {
+          icon: <Megaphone className="w-3.5 h-3.5 text-orange-400" />,
+          badge: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+          label: "催办",
+        };
+      }
+      if (res === "ON_SITE") {
+        return {
+          icon: <UserCheck className="w-3.5 h-3.5 text-blue-400" />,
+          badge: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+          label: "已到场",
+        };
+      }
+      if (res === "CLOSED") {
+        return {
+          icon: <DoorClosed className="w-3.5 h-3.5 text-emerald-400" />,
+          badge: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+          label: "已关闭",
+        };
+      }
+      return {
+        icon: <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />,
+        badge: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+        label: "已回复",
+      };
+    }
+    default:
+      return {
+        icon: <History className="w-3.5 h-3.5 text-slate-400" />,
+        badge: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+        label: "操作",
+      };
+  }
+};
+
 export const AlarmDispatch = () => {
-  const { selectedVehicleId, vehicles, alarms, updateAlarmStatus, currentShift } = useStore();
+  const { selectedVehicleId, vehicles, alarms, disposalActions, updateAlarmStatus, currentShift } = useStore();
   const [status, setStatus] = useState<AlarmStatus>("PENDING_VERIFY");
   const [remark, setRemark] = useState("");
   const [reminder, setReminder] = useState<ReminderValue>({ kind: "picked", minutes: null });
@@ -324,21 +445,79 @@ export const AlarmDispatch = () => {
         </button>
 
         <div className="mt-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-          <h3 className="text-slate-400 text-sm mb-3 flex items-center gap-2">
-            <History className="w-4 h-4" />
-            处理记录
+          <h3 className="text-slate-400 text-sm mb-3 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <History className="w-4 h-4" />
+              处理记录
+            </span>
+            <span className="text-[10px] text-slate-500">
+              共 {1 + ((disposalActions[selectedVehicleId || ""] || []).length)} 条
+            </span>
           </h3>
-          <div className="space-y-2">
-            <div className="text-xs text-slate-500">
-              {formatDateTime(alarm.createdAt)} - 系统自动创建告警
-            </div>
-            {alarm.handler && (
-              <div className="text-xs text-slate-400">
-                {formatDateTime(alarm.createdAt)} - {alarm.handler} 标记为{" "}
-                {getAlarmStatusLabel(alarm.status)}
+          {(() => {
+            const vehicleActions = disposalActions[selectedVehicleId || ""] || [];
+            type Rec = {
+              id: string;
+              timestamp: string;
+              text: string;
+              operator?: string;
+              visual: ReturnType<typeof getActionVisual> | null;
+            };
+            const allRecords: Rec[] = [
+              {
+                id: "sys-create",
+                timestamp: alarm.createdAt,
+                text: "系统自动创建告警",
+                operator: "系统",
+                visual: {
+                  icon: <CheckCircle2 className="w-3.5 h-3.5 text-slate-400" />,
+                  badge: "bg-slate-600/40 text-slate-300 border-slate-500/30",
+                  label: "创建",
+                },
+              },
+              ...vehicleActions
+                .filter((a) => (!alarm ? true : a.alarmId === alarm.id || !a.alarmId))
+                .map((a) => ({
+                  id: a.id,
+                  timestamp: a.timestamp,
+                  text: a.detail,
+                  operator: a.operator,
+                  visual: getActionVisual(a),
+                })),
+            ];
+            allRecords.sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+            return (
+              <div className="space-y-2">
+                {allRecords.map((rec) => (
+                  <div key={rec.id} className="flex items-start gap-2">
+                    {rec.visual && (
+                      <span className={`px-1.5 py-0.5 rounded border text-[10px] whitespace-nowrap flex items-center gap-1 mt-0.5 ${rec.visual.badge}`}>
+                        {rec.visual.icon}
+                        {rec.visual.label}
+                      </span>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-slate-300">{rec.text}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                        {rec.operator && (
+                          <>
+                            <User className="w-2.5 h-2.5" />
+                            <span>{rec.operator}</span>
+                            <span>·</span>
+                          </>
+                        )}
+                        <span className="font-mono">
+                          {formatDateTime(rec.timestamp)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
+            );
+          })()}
         </div>
       </div>
     </div>

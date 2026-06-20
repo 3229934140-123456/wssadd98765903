@@ -117,8 +117,40 @@ export interface AppState {
 export interface DisposalAction {
   id: string;
   vehicleId: string;
-  actionType: "CALL_DRIVER" | "NOTIFY_WAREHOUSE" | "SEND_MESSAGE";
+  actionType:
+    | "CALL_DRIVER"
+    | "NOTIFY_WAREHOUSE"
+    | "SEND_MESSAGE"
+    | "STATUS_CHANGE"
+    | "REMINDER_CHANGE"
+    | "FOLLOW_UP";
   timestamp: string;
   detail: string;
   operator: string;
+  subType?: string;
+  alarmId?: string;
+}
+
+export interface FollowUpRecord {
+  id: string;
+  alarmId: string;
+  vehicleId: string;
+  result: "URGED" | "ON_SITE" | "CLOSED" | "REPLIED";
+  detail: string;
+  targetPerson: string;
+  operator: string;
+  timestamp: string;
+}
+
+export type ReminderChangeKind = "KEPT" | "CLEARED" | "CHANGED";
+
+export interface ReminderChangeLog {
+  id: string;
+  alarmId: string;
+  vehicleId: string;
+  kind: ReminderChangeKind;
+  fromValue: string | null;
+  toValue: string | null;
+  operator: string;
+  timestamp: string;
 }

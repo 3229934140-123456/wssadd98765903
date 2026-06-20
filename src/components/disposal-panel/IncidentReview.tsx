@@ -8,11 +8,18 @@ import {
   Clock,
   Activity,
   CheckCircle2,
+  XCircle,
   Phone,
-  PhoneCall,
   Warehouse,
   MessageSquare,
   FileText,
+  RefreshCw,
+  Bell,
+  BellOff,
+  BellRing,
+  Megaphone,
+  UserCheck,
+  DoorClosed as DoorClosedIcon,
 } from "lucide-react";
 import {
   DoorEvent,
@@ -153,6 +160,7 @@ export const IncidentReview = ({
   disposalActions.forEach((action) => {
     let icon: React.ReactNode;
     let label: string;
+    let severity: "normal" | "warning" | "critical" = "normal";
     switch (action.actionType) {
       case "CALL_DRIVER":
         icon = <Phone className="w-4 h-4 text-blue-400" />;
@@ -166,29 +174,74 @@ export const IncidentReview = ({
         icon = <MessageSquare className="w-4 h-4 text-cyan-400" />;
         label = "发送通知消息";
         break;
+      case "STATUS_CHANGE": {
+        const status = action.subType as any;
+        if (status === "FALSE_ALARM") {
+          icon = <XCircle className="w-4 h-4 text-gray-400" />;
+        } else if (status === "NEED_QC") {
+          icon = <AlertTriangle className="w-4 h-4 text-orange-400" />;
+          severity = "warning";
+        } else {
+          icon = <RefreshCw className="w-4 h-4 text-emerald-400" />;
+        }
+        label = "状态变更";
+        break;
+      }
+      case "REMINDER_CHANGE": {
+        const kind = action.subType;
+        if (kind === "CLEARED") {
+          icon = <BellOff className="w-4 h-4 text-slate-400" />;
+        } else if (kind === "CHANGED") {
+          icon = <BellRing className="w-4 h-4 text-blue-400" />;
+        } else {
+          icon = <Bell className="w-4 h-4 text-cyan-400" />;
+        }
+        label = "提醒变更";
+        break;
+      }
+      case "FOLLOW_UP": {
+        const result = action.subType;
+        if (result === "URGED") {
+          icon = <Megaphone className="w-4 h-4 text-orange-400" />;
+          severity = "warning";
+        } else if (result === "ON_SITE") {
+          icon = <UserCheck className="w-4 h-4 text-blue-400" />;
+        } else if (result === "CLOSED") {
+          icon = <DoorClosedIcon className="w-4 h-4 text-emerald-400" />;
+        } else {
+          icon = <MessageSquare className="w-4 h-4 text-cyan-400" />;
+        }
+        label = "跟进登记";
+        break;
+      }
       default:
-        icon = <PhoneCall className="w-4 h-4 text-slate-400" />;
+        icon = <RefreshCw className="w-4 h-4 text-slate-400" />;
         label = "处置操作";
     }
     timelineItems.push({
       id: action.id,
       timestamp: action.timestamp,
-      type: "disposal_action",
+      type: action.actionType === "STATUS_CHANGE" ? "alarm_action" : "disposal_action",
       icon,
       label,
       detail: action.detail,
       location: "",
-      severity: "normal",
+      severity,
       operator: action.operator,
     });
   });
 
-  if (alarm && alarm.status !== "PENDING_VERIFY") {
+  if (alarm && !disposalActions.some((a) => a.actionType === "STATUS_CHANGE" && a.alarmId === alarm.id)) {
     timelineItems.push({
       id: `${alarm.id}-status`,
       timestamp: alarm.createdAt,
       type: "alarm_action",
-      icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" />,
+      icon:
+        alarm.status === "FALSE_ALARM" ? (
+          <XCircle className="w-4 h-4 text-gray-400" />
+        ) : (
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+        ),
       label: `标记为${getAlarmStatusLabel(alarm.status)}`,
       detail: alarm.remark || `告警状态更新为：${getAlarmStatusLabel(alarm.status)}`,
       location: "",
@@ -207,21 +260,35 @@ export const IncidentReview = ({
     .reverse()
     .find((item) => item.severity === "critical");
 
+  const closingDisposal = [...disposalActions]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .find(
+      (a) =>
+        a.actionType === "FOLLOW_UP" && a.subType === "CLOSED" ||
+        a.actionType === "STATUS_CHANGE" &&
+          (a.subType === "FALSE_ALARM" || a.subType === "CONTACTED" || a.subType === "NEED_QC")
+    );
+
+  const latestDisposalItem = [...timelineItems]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .find((i) => i.type === "alarm_action" || i.type === "disposal_action");
+
+  const durationIsClosed =
+    !!closingDisposal || (!!alarm && alarm.status === "FALSE_ALARM");
+
   const getDuration = () => {
     if (!firstAbnormalItem) return null;
     const start = new Date(firstAbnormalItem.timestamp).getTime();
-    const endAnchor = alarm && alarm.status !== "PENDING_VERIFY" && latestItem
-      ? new Date(latestItem.timestamp).getTime()
-      : Date.now();
-    const diffMs = endAnchor - start;
+    const endAnchor =
+      durationIsClosed && latestDisposalItem
+        ? new Date(latestDisposalItem.timestamp).getTime()
+        : Date.now();
+    const diffMs = Math.max(0, endAnchor - start);
     const hours = Math.floor(diffMs / 3600000);
     const minutes = Math.floor((diffMs % 3600000) / 60000);
     if (hours > 0) return `${hours}小时${minutes}分钟`;
     return `${minutes}分钟`;
   };
-
-  const durationIsClosed =
-    !!alarm && alarm.status !== "PENDING_VERIFY" && !!latestItem;
 
   const getSeverityStyle = (severity: string) => {
     switch (severity) {
@@ -284,8 +351,8 @@ export const IncidentReview = ({
             </div>
             <div className="text-slate-500 text-xs mt-1">
               {durationIsClosed
-                ? `从首次异常→${latestItem ? latestItem.label : "最新节点"}`
-                : "从首次异常至今"}
+                ? `从首次异常→${latestDisposalItem ? latestDisposalItem.label : "处置结束"}`
+                : "从首次异常至今（持续进行）"}
             </div>
           </div>
           <div className="p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
