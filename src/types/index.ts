@@ -154,3 +154,12 @@ export interface ReminderChangeLog {
   operator: string;
   timestamp: string;
 }
+
+export interface TakeoverRecord {
+  id: string;
+  alarmId: string;
+  vehicleId: string;
+  fromOperator: string;
+  toOperator: string;
+  timestamp: string;
+}

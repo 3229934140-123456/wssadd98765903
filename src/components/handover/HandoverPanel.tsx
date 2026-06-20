@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Handshake,
   ListChecks,
@@ -10,9 +10,15 @@ import {
   MapPin,
   Truck,
   MessageSquare,
+  Megaphone,
+  UserCheck,
+  DoorClosed,
+  AlertCircle,
+  CheckCircle2,
+  ArrowRightLeft,
+  Archive,
 } from "lucide-react";
 import { useStore } from "../../store/useStore";
-import { UnclosedList } from "./UnclosedList";
 import { HandoverForm } from "./HandoverForm";
 import { formatDateTime } from "../../utils/dateUtils";
 import {
@@ -22,69 +28,126 @@ import {
   getAlarmStatusColor,
 } from "../../utils/statusUtils";
 
+type CategoryKey = "unclosed" | "unreplied" | "on_site" | "closed_archive";
+
+const CATEGORIES: { key: CategoryKey; label: string; icon: React.ReactNode; color: string }[] = [
+  { key: "unclosed", label: "未关闭告警", icon: <ListChecks className="w-3.5 h-3.5" />, color: "text-amber-400" },
+  { key: "unreplied", label: "未回复催办", icon: <Megaphone className="w-3.5 h-3.5" />, color: "text-orange-400" },
+  { key: "on_site", label: "已到场待确认", icon: <UserCheck className="w-3.5 h-3.5" />, color: "text-blue-400" },
+  { key: "closed_archive", label: "已关闭待归档", icon: <Archive className="w-3.5 h-3.5" />, color: "text-emerald-400" },
+];
+
 export const HandoverPanel = () => {
   const {
     alarms,
     vehicles,
+    followUpRecords,
     handovers,
     handoverItems,
     currentShift,
+    takeoverRecords,
     createHandover,
     addHandoverFollowUp,
+    addTakeover,
   } = useStore();
+
   const [activeTab, setActiveTab] = useState<"current" | "history">("current");
+  const [activeCategory, setActiveCategory] = useState<CategoryKey>("unclosed");
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
   const [followUpInputs, setFollowUpInputs] = useState<Record<string, string>>({});
+  const [checkedAlarms, setCheckedAlarms] = useState<Set<string>>(new Set());
+  const [handoverNotes, setHandoverNotes] = useState<Record<string, string>>({});
 
-  const unclosedAlarms = alarms.filter((a) => a.status !== "FALSE_ALARM");
+  const categorizeAlarms = useMemo(() => {
+    const result: Record<CategoryKey, { alarm: typeof alarms[number]; vehicle: typeof vehicles[number] | undefined }[]> = {
+      unclosed: [],
+      unreplied: [],
+      on_site: [],
+      closed_archive: [],
+    };
 
-  const [handoverItemsData, setHandoverItemsData] = useState(
-    unclosedAlarms.map((alarm) => ({
-      alarm,
-      vehicle: vehicles.find((v) => v.id === alarm.vehicleId)!,
-      isChecked: true,
-      notes: "",
-    }))
+    const byAlarm: Record<string, typeof followUpRecords> = {};
+    followUpRecords.forEach((r) => {
+      if (!byAlarm[r.alarmId]) byAlarm[r.alarmId] = [];
+      byAlarm[r.alarmId].push(r);
+    });
+
+    alarms.forEach((alarm) => {
+      if (alarm.status === "FALSE_ALARM") return;
+      const vehicle = vehicles.find((v) => v.id === alarm.vehicleId);
+      const records = byAlarm[alarm.id] || [];
+      const sorted = [...records].sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      const hasClosed = sorted.some((r) => r.result === "CLOSED");
+      const hasOnSite = sorted.some((r) => r.result === "ON_SITE");
+      const lastUrgeIdx = sorted.findIndex((r) => r.result === "URGED");
+      const hasReplyAfterUrge =
+        lastUrgeIdx !== -1 &&
+        sorted.slice(0, lastUrgeIdx).some(
+          (r) => r.result === "REPLIED" || r.result === "ON_SITE" || r.result === "CLOSED"
+        );
+
+      if (hasClosed) {
+        result.closed_archive.push({ alarm, vehicle });
+      } else {
+        result.unclosed.push({ alarm, vehicle });
+      }
+
+      if (lastUrgeIdx !== -1 && !hasReplyAfterUrge && !hasClosed) {
+        result.unreplied.push({ alarm, vehicle });
+      }
+
+      if (hasOnSite && !hasClosed) {
+        result.on_site.push({ alarm, vehicle });
+      }
+    });
+
+    return result;
+  }, [alarms, vehicles, followUpRecords]);
+
+  const categoryCounts = useMemo(
+    () => ({
+      unclosed: categorizeAlarms.unclosed.length,
+      unreplied: categorizeAlarms.unreplied.length,
+      on_site: categorizeAlarms.on_site.length,
+      closed_archive: categorizeAlarms.closed_archive.length,
+    }),
+    [categorizeAlarms]
   );
 
-  const handleToggleCheck = (alarmId: string) => {
-    setHandoverItemsData((prev) =>
-      prev.map((item) =>
-        item.alarm.id === alarmId ? { ...item, isChecked: !item.isChecked } : item
-      )
-    );
+  const toggleCheck = (alarmId: string) => {
+    setCheckedAlarms((prev) => {
+      const next = new Set(prev);
+      if (next.has(alarmId)) next.delete(alarmId);
+      else next.add(alarmId);
+      return next;
+    });
   };
 
-  const handleUpdateNotes = (alarmId: string, notes: string) => {
-    setHandoverItemsData((prev) =>
-      prev.map((item) =>
-        item.alarm.id === alarmId ? { ...item, notes } : item
-      )
-    );
+  const handleTakeover = (alarmId: string) => {
+    addTakeover(alarmId, currentShift.operator);
   };
 
   const handleHandover = (incomingPerson: string, remarks: string) => {
-    const checkedItems = handoverItemsData.filter((item) => item.isChecked);
+    const itemsToHandover = categorizeAlarms.unclosed
+      .filter(({ alarm }) => checkedAlarms.has(alarm.id))
+      .map(({ alarm, vehicle }) => ({
+        alarmId: alarm.id,
+        description: `${vehicle?.plateNumber || "未知"} - ${vehicle?.driverName || "未知"}`,
+        notes: handoverNotes[alarm.id] || "",
+        tripNo: vehicle?.tripNo || "",
+        route: vehicle?.route || "",
+        estimatedArrival: vehicle?.estimatedArrival || "",
+        handler: alarm.handler || currentShift.operator,
+      }));
 
-    createHandover(
-      currentShift.operator,
-      incomingPerson,
-      checkedItems.map((item) => ({
-        alarmId: item.alarm.id,
-        description: `${item.vehicle.plateNumber} - ${item.vehicle.driverName}`,
-        notes: item.notes,
-        tripNo: item.vehicle.tripNo,
-        route: item.vehicle.route,
-        estimatedArrival: item.vehicle.estimatedArrival,
-        handler: item.alarm.handler || currentShift.operator,
-      })),
-      remarks
-    );
+    if (itemsToHandover.length === 0) return;
 
-    setHandoverItemsData((prev) =>
-      prev.map((item) => ({ ...item, isChecked: true, notes: "" }))
-    );
+    createHandover(currentShift.operator, incomingPerson, itemsToHandover, remarks);
+    setCheckedAlarms(new Set());
+    setHandoverNotes({});
   };
 
   const handleAddFollowUp = (itemId: string) => {
@@ -93,8 +156,6 @@ export const HandoverPanel = () => {
     addHandoverFollowUp(itemId, currentShift.operator, note);
     setFollowUpInputs((prev) => ({ ...prev, [itemId]: "" }));
   };
-
-  const checkedCount = handoverItemsData.filter((i) => i.isChecked).length;
 
   const groupedHistoryItems = (handoverId: string) => {
     const items = handoverItems.filter((i) => i.handoverId === handoverId);
@@ -107,13 +168,15 @@ export const HandoverPanel = () => {
     return grouped;
   };
 
+  const currentItems = categorizeAlarms[activeCategory];
+
   return (
     <div className="h-full flex flex-col bg-slate-900/50">
       <div className="p-4 border-b border-slate-700">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-white font-bold text-lg flex items-center gap-2">
             <Handshake className="w-5 h-5 text-purple-400" />
-            班次交接
+            交接指挥台
           </h2>
           <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
             <button
@@ -124,7 +187,7 @@ export const HandoverPanel = () => {
                   : "text-slate-400 hover:text-white"
               }`}
             >
-              待交接
+              指挥台
             </button>
             <button
               onClick={() => setActiveTab("history")}
@@ -156,29 +219,166 @@ export const HandoverPanel = () => {
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === "current" ? (
           <div className="space-y-4">
-            <div>
-              <h3 className="text-slate-400 text-sm mb-3 flex items-center gap-2">
-                <ListChecks className="w-4 h-4" />
-                未关闭事项清单
-                <span className="text-blue-400 font-semibold">
-                  ({checkedCount}/{handoverItemsData.length} 项已勾选)
-                </span>
-              </h3>
-              <UnclosedList
-                items={handoverItemsData}
-                onToggleCheck={handleToggleCheck}
-                onUpdateNotes={handleUpdateNotes}
-              />
+            <div className="flex gap-1 bg-slate-800/50 rounded-lg p-1">
+              {CATEGORIES.map((cat) => (
+                <button
+                  key={cat.key}
+                  onClick={() => setActiveCategory(cat.key)}
+                  className={`flex-1 flex items-center justify-center gap-1 py-2 text-[11px] font-semibold rounded-md transition-all ${
+                    activeCategory === cat.key
+                      ? `bg-slate-700 ${cat.color} ring-1 ring-slate-600`
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {cat.icon}
+                  <span>{cat.label}</span>
+                  {categoryCounts[cat.key] > 0 && (
+                    <span className="ml-0.5 px-1 py-0.5 text-[9px] rounded-full bg-slate-600 text-white font-bold">
+                      {categoryCounts[cat.key]}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
 
-            {handoverItemsData.length > 0 && (
+            {currentItems.length === 0 ? (
+              <div className="text-center py-10 text-slate-500 text-sm">
+                <ListChecks className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                本分类下暂无事项
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {currentItems.map(({ alarm, vehicle }) => {
+                  if (!vehicle) return null;
+                  const takeover = takeoverRecords
+                    .filter((t) => t.alarmId === alarm.id)
+                    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+                  const isChecked = checkedAlarms.has(alarm.id);
+
+                  return (
+                    <div
+                      key={alarm.id}
+                      className={`p-3 rounded-lg border transition-all ${
+                        isChecked
+                          ? "bg-purple-500/5 border-purple-500/30"
+                          : "bg-slate-800/50 border-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {activeCategory === "unclosed" && (
+                          <button
+                            onClick={() => toggleCheck(alarm.id)}
+                            className="mt-1 flex-shrink-0"
+                          >
+                            {isChecked ? (
+                              <CheckCircle2 className="w-4 h-4 text-purple-400" />
+                            ) : (
+                              <div className="w-4 h-4 rounded border-2 border-slate-500" />
+                            )}
+                          </button>
+                        )}
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                            <Truck className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                            <span className="text-white font-bold text-sm font-mono">
+                              {vehicle.plateNumber}
+                            </span>
+                            <span className="px-1 py-0.5 text-[10px] rounded bg-cyan-500/10 text-cyan-400 font-mono">
+                              {vehicle.tripNo}
+                            </span>
+                            <span
+                              className="px-1 py-0.5 text-[10px] rounded font-semibold"
+                              style={{
+                                backgroundColor: `${getAbnormalTypeColor(alarm.abnormalType)}20`,
+                                color: getAbnormalTypeColor(alarm.abnormalType),
+                              }}
+                            >
+                              {getAbnormalTypeLabel(alarm.abnormalType)}
+                            </span>
+                            <span
+                              className="px-1 py-0.5 text-[10px] rounded font-semibold"
+                              style={{
+                                backgroundColor: `${getAlarmStatusColor(alarm.status)}20`,
+                                color: getAlarmStatusColor(alarm.status),
+                              }}
+                            >
+                              {getAlarmStatusLabel(alarm.status)}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-slate-400 mb-1.5">
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-slate-500" />
+                              {vehicle.route}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <User className="w-3 h-3 text-slate-500" />
+                              {vehicle.driverName}
+                            </span>
+                          </div>
+
+                          {alarm.remark && (
+                            <div className="text-[11px] text-slate-300 mb-1.5">
+                              {alarm.remark}
+                            </div>
+                          )}
+
+                          {takeover && (
+                            <div className="text-[10px] text-purple-300 flex items-center gap-1 mb-1.5 bg-purple-500/10 px-2 py-1 rounded">
+                              <ArrowRightLeft className="w-3 h-3" />
+                              {takeover.fromOperator} → {takeover.toOperator}
+                              <span className="text-slate-500 font-mono ml-1">
+                                {formatDateTime(takeover.timestamp)}
+                              </span>
+                            </div>
+                          )}
+
+                          {activeCategory === "unclosed" && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <input
+                                type="text"
+                                value={handoverNotes[alarm.id] || ""}
+                                onChange={(e) =>
+                                  setHandoverNotes((prev) => ({
+                                    ...prev,
+                                    [alarm.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="交班说明..."
+                                className="flex-1 px-2 py-1 bg-slate-700/50 border border-slate-600 rounded text-white text-[11px] placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                              />
+                              <button
+                                onClick={() => handleTakeover(alarm.id)}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-all"
+                              >
+                                <ArrowRightLeft className="w-3 h-3" />
+                                一键接手
+                              </button>
+                            </div>
+                          )}
+
+                          {activeCategory === "closed_archive" && (
+                            <div className="text-[10px] text-emerald-400 flex items-center gap-1">
+                              <DoorClosed className="w-3 h-3" />
+                              该车辆催办已关闭，可归档归入历史
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {activeCategory === "unclosed" && categoryCounts.unclosed > 0 && (
               <div className="pt-4 border-t border-slate-700">
-                <h3 className="text-slate-400 text-sm mb-3">交接确认</h3>
                 <HandoverForm
                   outgoingPerson={currentShift.operator}
                   onSubmit={handleHandover}
-                  itemCount={checkedCount}
-                  disabled={checkedCount === 0}
+                  itemCount={checkedAlarms.size}
+                  disabled={checkedAlarms.size === 0}
                 />
               </div>
             )}

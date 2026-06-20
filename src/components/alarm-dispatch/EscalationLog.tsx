@@ -23,7 +23,7 @@ import { formatDateTime, formatMinutesRemaining, getSlaMinutesRemaining } from "
 
 const QC_RESPONSE_SLA_MINUTES = 30;
 
-type FilterKey = "all" | "unreplied" | "current_shift";
+type FilterKey = "all" | "open" | "unreplied" | "current_shift";
 
 const RESULT_META: Record<
   FollowUpRecord["result"],
@@ -53,6 +53,7 @@ const RESULT_META: Record<
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "全部" },
+  { key: "open", label: "未闭环" },
   { key: "unreplied", label: "未回复" },
   { key: "current_shift", label: "本班次" },
 ];
@@ -76,6 +77,7 @@ export const EscalationLog = () => {
         vehicle: (typeof vehicles)[number] | undefined;
         records: FollowUpRecord[];
         hasUnrepliedUrge: boolean;
+        isClosed: boolean;
       }
     > = {};
 
@@ -91,6 +93,7 @@ export const EscalationLog = () => {
             vehicle: vehicles.find((v) => v.id === r.vehicleId),
             records: [],
             hasUnrepliedUrge: false,
+            isClosed: false,
           };
         }
         byAlarm[r.alarmId].records.push(r);
@@ -100,6 +103,8 @@ export const EscalationLog = () => {
       const sorted = [...g.records].sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
+      const hasClosed = sorted.some((r) => r.result === "CLOSED");
+      g.isClosed = hasClosed;
       const lastUrgeIdx = sorted.findIndex((r) => r.result === "URGED");
       if (lastUrgeIdx !== -1) {
         const hasReplyAfter = sorted
@@ -111,15 +116,19 @@ export const EscalationLog = () => {
 
     let list = Object.values(byAlarm);
 
-    if (filter === "unreplied") {
-      list = list.filter((g) => g.hasUnrepliedUrge);
+    if (filter === "open") {
+      list = list.filter((g) => !g.isClosed);
+    } else if (filter === "unreplied") {
+      list = list.filter((g) => g.hasUnrepliedUrge && !g.isClosed);
     } else if (filter === "current_shift") {
-      list = list.filter((g) =>
-        g.records.some((r) => r.operator === currentShift.operator)
+      list = list.filter(
+        (g) => !g.isClosed && g.records.some((r) => r.operator === currentShift.operator)
       );
     }
 
     list.sort((a, b) => {
+      if (!a.isClosed && b.isClosed) return -1;
+      if (a.isClosed && !b.isClosed) return 1;
       if (a.hasUnrepliedUrge && !b.hasUnrepliedUrge) return -1;
       if (!a.hasUnrepliedUrge && b.hasUnrepliedUrge) return 1;
       const ta = new Date(a.records[0]?.timestamp || 0).getTime();
@@ -130,14 +139,15 @@ export const EscalationLog = () => {
     return list;
   }, [followUpRecords, alarms, vehicles, filter, currentShift.operator]);
 
-  const unrepliedCount = grouped.filter((g) => g.hasUnrepliedUrge).length;
+  const unrepliedCount = grouped.filter((g) => g.hasUnrepliedUrge && !g.isClosed).length;
+  const openCount = grouped.filter((g) => !g.isClosed).length;
 
   const pendingEscalationsForHandover = grouped.filter(
     (g) =>
-      g.hasUnrepliedUrge ||
-      (g.alarm.status === "NEED_QC" &&
-        getSlaMinutesRemaining(g.alarm.createdAt, QC_RESPONSE_SLA_MINUTES) < 0) ||
-      g.records.some((r) => r.result !== "CLOSED")
+      !g.isClosed &&
+      (g.hasUnrepliedUrge ||
+        (g.alarm.status === "NEED_QC" &&
+          getSlaMinutesRemaining(g.alarm.createdAt, QC_RESPONSE_SLA_MINUTES) < 0))
   );
 
   return (
@@ -170,6 +180,9 @@ export const EscalationLog = () => {
               }`}
             >
               {f.label}
+              {f.key === "open" && openCount > 0 && (
+                <span className="ml-1 text-indigo-400">({openCount})</span>
+              )}
               {f.key === "unreplied" && unrepliedCount > 0 && (
                 <span className="ml-1 text-orange-400">({unrepliedCount})</span>
               )}
@@ -211,7 +224,9 @@ export const EscalationLog = () => {
               <div
                 key={group.alarm.id}
                 className={`rounded-lg border overflow-hidden transition-all ${
-                  group.hasUnrepliedUrge
+                  group.isClosed
+                    ? "border-slate-700/50 bg-slate-800/30 opacity-60"
+                    : group.hasUnrepliedUrge
                     ? "border-orange-500/30 bg-orange-500/5"
                     : "border-slate-700 bg-slate-800/50"
                 }`}
@@ -249,9 +264,14 @@ export const EscalationLog = () => {
                       >
                         {getAbnormalTypeLabel(group.alarm.abnormalType)}
                       </span>
-                      {group.hasUnrepliedUrge && (
+                      {group.hasUnrepliedUrge && !group.isClosed && (
                         <span className="px-1.5 py-0.5 text-[10px] rounded bg-orange-500/20 text-orange-400 font-bold border border-orange-500/30 animate-pulse">
                           待回复
+                        </span>
+                      )}
+                      {group.isClosed && (
+                        <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          已关闭
                         </span>
                       )}
                     </div>

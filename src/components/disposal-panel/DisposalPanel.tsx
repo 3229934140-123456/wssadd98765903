@@ -222,6 +222,7 @@ export const DisposalPanel = () => {
             alarm={alarm}
             driverReports={reports}
             disposalActions={actions}
+            vehicle={selectedVehicle}
           />
         )}
         {activeTab === "timeline" && <DoorTimeline events={events} />}

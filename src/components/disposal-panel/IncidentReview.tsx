@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   DoorOpen,
   DoorClosed,
@@ -20,6 +21,11 @@ import {
   Megaphone,
   UserCheck,
   DoorClosed as DoorClosedIcon,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Layers,
+  List,
 } from "lucide-react";
 import {
   DoorEvent,
@@ -28,9 +34,15 @@ import {
   Alarm,
   DriverReport,
   DisposalAction,
+  Vehicle,
 } from "../../types";
 import { formatDateTime } from "../../utils/dateUtils";
-import { getAlarmStatusLabel, getAlarmStatusColor } from "../../utils/statusUtils";
+import {
+  getAlarmStatusLabel,
+  getAlarmStatusColor,
+  getAbnormalTypeLabel,
+} from "../../utils/statusUtils";
+import { PhaseKey, PHASE_DEFS, PHASE_ORDER, getPhaseForItem } from "./phaseConfig";
 
 interface IncidentReviewProps {
   events: DoorEvent[];
@@ -39,6 +51,7 @@ interface IncidentReviewProps {
   alarm: Alarm | undefined;
   driverReports: DriverReport[];
   disposalActions: DisposalAction[];
+  vehicle: Vehicle | undefined;
 }
 
 type TimelineItem = {
@@ -57,6 +70,118 @@ type TimelineItem = {
   location: string;
   severity: "normal" | "warning" | "critical";
   operator?: string;
+  actionType?: string;
+  subType?: string;
+};
+
+const getSeverityStyle = (severity: string) => {
+  switch (severity) {
+    case "critical":
+      return "bg-red-500/20 border-red-500/30";
+    case "warning":
+      return "bg-amber-500/20 border-amber-500/30";
+    default:
+      return "bg-slate-700/30 border-slate-600/30";
+  }
+};
+
+const getTypeBadge = (type: string) => {
+  switch (type) {
+    case "door":
+      return { label: "门磁", bg: "bg-blue-500/20", text: "text-blue-400" };
+    case "temperature":
+      return { label: "温度", bg: "bg-red-500/20", text: "text-red-400" };
+    case "location":
+      return { label: "位置", bg: "bg-orange-500/20", text: "text-orange-400" };
+    case "driver_report":
+      return { label: "司机", bg: "bg-cyan-500/20", text: "text-cyan-400" };
+    case "disposal_action":
+      return { label: "处置", bg: "bg-purple-500/20", text: "text-purple-400" };
+    case "alarm_action":
+      return { label: "状态", bg: "bg-emerald-500/20", text: "text-emerald-400" };
+    default:
+      return { label: "其他", bg: "bg-slate-500/20", text: "text-slate-400" };
+  }
+};
+
+const formatDuration = (items: TimelineItem[]): string | null => {
+  if (items.length < 2) return null;
+  const start = new Date(items[0].timestamp).getTime();
+  const end = new Date(items[items.length - 1].timestamp).getTime();
+  const diffMs = Math.max(0, end - start);
+  const hours = Math.floor(diffMs / 3600000);
+  const minutes = Math.floor((diffMs % 3600000) / 60000);
+  if (hours > 0) return `${hours}小时${minutes}分钟`;
+  return `${minutes}分钟`;
+};
+
+const getOperators = (items: TimelineItem[]): string[] => {
+  const set = new Set<string>();
+  for (const item of items) {
+    if (item.operator) set.add(item.operator);
+  }
+  return Array.from(set);
+};
+
+const renderTimelineItem = (item: TimelineItem, index: number, total: number) => {
+  const badge = getTypeBadge(item.type);
+  const isFirst = index === 0;
+  const isLast = index === total - 1;
+  return (
+    <div key={item.id} className="relative pl-10">
+      <div
+        className={`absolute left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center ${getSeverityStyle(
+          item.severity
+        )} ${item.severity === "critical" ? "animate-pulse" : ""} ${
+          isFirst ? "ring-2 ring-emerald-500/30" : ""
+        } ${isLast ? "ring-2 ring-cyan-500/30" : ""}`}
+      >
+        {item.icon}
+      </div>
+      {isFirst && (
+        <div className="absolute left-2 -top-1 -translate-x-0.5 -translate-y-full">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium whitespace-nowrap">
+            起点
+          </span>
+        </div>
+      )}
+      {isLast && (
+        <div className="absolute left-2 -bottom-1 -translate-x-0.5 translate-y-full">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-medium whitespace-nowrap">
+            当前
+          </span>
+        </div>
+      )}
+      <div
+        className={`p-3 rounded-lg border ${getSeverityStyle(item.severity)} ${
+          isLast ? "ring-2 ring-cyan-500/50" : ""
+        }`}
+      >
+        <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`px-1.5 py-0.5 text-xs rounded font-medium ${badge.bg} ${badge.text}`}
+            >
+              {badge.label}
+            </span>
+            <span className="text-white font-medium text-sm">{item.label}</span>
+            {item.operator && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/30 text-slate-300">
+                {item.operator}
+              </span>
+            )}
+          </div>
+          <span className="text-slate-400 text-xs font-mono">
+            {formatDateTime(item.timestamp)}
+          </span>
+        </div>
+        <p className="text-slate-300 text-sm mb-1">{item.detail}</p>
+        {item.location && (
+          <p className="text-slate-500 text-xs">📍 {item.location}</p>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export const IncidentReview = ({
@@ -66,7 +191,11 @@ export const IncidentReview = ({
   alarm,
   driverReports,
   disposalActions,
+  vehicle,
 }: IncidentReviewProps) => {
+  const [viewMode, setViewMode] = useState<"phase" | "timeline">("phase");
+  const [collapsedPhases, setCollapsedPhases] = useState<Set<PhaseKey>>(new Set());
+
   const isTempAbnormal = (temp: number) => temp > 8 || temp < 0;
   const abnormalTempRecords = tempRecords.filter((r) => isTempAbnormal(r.temperature));
 
@@ -76,7 +205,6 @@ export const IncidentReview = ({
     let icon: React.ReactNode;
     let label: string;
     let severity: "normal" | "warning" | "critical" = "normal";
-
     switch (event.eventType) {
       case "OPEN":
         icon = <DoorOpen className="w-4 h-4 text-amber-400" />;
@@ -86,7 +214,6 @@ export const IncidentReview = ({
       case "CLOSE":
         icon = <DoorClosed className="w-4 h-4 text-emerald-400" />;
         label = "车门关闭";
-        severity = "normal";
         break;
       case "ABNORMAL":
         icon = <AlertTriangle className="w-4 h-4 text-red-400" />;
@@ -102,7 +229,6 @@ export const IncidentReview = ({
         icon = <Clock className="w-4 h-4 text-slate-400" />;
         label = "未知事件";
     }
-
     timelineItems.push({
       id: event.id,
       timestamp: event.timestamp,
@@ -154,6 +280,7 @@ export const IncidentReview = ({
       location: "",
       severity: report.abnormal === "YES" ? "warning" : "normal",
       operator: "司机",
+      actionType: "DRIVER_REPORT",
     });
   });
 
@@ -193,6 +320,8 @@ export const IncidentReview = ({
           icon = <BellOff className="w-4 h-4 text-slate-400" />;
         } else if (kind === "CHANGED") {
           icon = <BellRing className="w-4 h-4 text-blue-400" />;
+        } else if (kind === "KEPT") {
+          icon = <BellRing className="w-4 h-4 text-emerald-400" />;
         } else {
           icon = <Bell className="w-4 h-4 text-cyan-400" />;
         }
@@ -228,10 +357,17 @@ export const IncidentReview = ({
       location: "",
       severity,
       operator: action.operator,
+      actionType: action.actionType,
+      subType: action.subType,
     });
   });
 
-  if (alarm && !disposalActions.some((a) => a.actionType === "STATUS_CHANGE" && a.alarmId === alarm.id)) {
+  if (
+    alarm &&
+    !disposalActions.some(
+      (a) => a.actionType === "STATUS_CHANGE" && a.alarmId === alarm.id
+    )
+  ) {
     timelineItems.push({
       id: `${alarm.id}-status`,
       timestamp: alarm.createdAt,
@@ -247,6 +383,8 @@ export const IncidentReview = ({
       location: "",
       severity: "normal",
       operator: alarm.handler || "调度员",
+      actionType: "STATUS_CHANGE",
+      subType: alarm.status,
     });
   }
 
@@ -264,9 +402,11 @@ export const IncidentReview = ({
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .find(
       (a) =>
-        a.actionType === "FOLLOW_UP" && a.subType === "CLOSED" ||
-        a.actionType === "STATUS_CHANGE" &&
-          (a.subType === "FALSE_ALARM" || a.subType === "CONTACTED" || a.subType === "NEED_QC")
+        (a.actionType === "FOLLOW_UP" && a.subType === "CLOSED") ||
+        (a.actionType === "STATUS_CHANGE" &&
+          (a.subType === "FALSE_ALARM" ||
+            a.subType === "CONTACTED" ||
+            a.subType === "NEED_QC"))
     );
 
   const latestDisposalItem = [...timelineItems]
@@ -290,34 +430,67 @@ export const IncidentReview = ({
     return `${minutes}分钟`;
   };
 
-  const getSeverityStyle = (severity: string) => {
-    switch (severity) {
-      case "critical":
-        return "bg-red-500/20 border-red-500/30";
-      case "warning":
-        return "bg-amber-500/20 border-amber-500/30";
-      default:
-        return "bg-slate-700/30 border-slate-600/30";
+  const phaseGroups = (() => {
+    const groups: Record<PhaseKey, TimelineItem[]> = {
+      discovery: [],
+      contact: [],
+      qc_transfer: [],
+      urge: [],
+      close: [],
+    };
+    let lastPhase: PhaseKey = "discovery";
+    for (const item of timelineItems) {
+      let phase = getPhaseForItem(item.type, item.actionType, item.subType);
+      if (!phase) phase = lastPhase;
+      lastPhase = phase;
+      groups[phase].push(item);
     }
+    return groups;
+  })();
+
+  const togglePhase = (key: PhaseKey) => {
+    setCollapsedPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
-  const getTypeBadge = (type: string) => {
-    switch (type) {
-      case "door":
-        return { label: "门磁", bg: "bg-blue-500/20", text: "text-blue-400" };
-      case "temperature":
-        return { label: "温度", bg: "bg-red-500/20", text: "text-red-400" };
-      case "location":
-        return { label: "位置", bg: "bg-orange-500/20", text: "text-orange-400" };
-      case "driver_report":
-        return { label: "司机", bg: "bg-cyan-500/20", text: "text-cyan-400" };
-      case "disposal_action":
-        return { label: "处置", bg: "bg-purple-500/20", text: "text-purple-400" };
-      case "alarm_action":
-        return { label: "状态", bg: "bg-emerald-500/20", text: "text-emerald-400" };
-      default:
-        return { label: "其他", bg: "bg-slate-500/20", text: "text-slate-400" };
+  const exportReviewChain = () => {
+    const lines: string[] = [];
+    lines.push("异常复盘报告");
+    lines.push("══════════════════════════════════");
+    if (vehicle) {
+      lines.push(
+        `车辆：${vehicle.plateNumber} | 车次：${vehicle.tripNo} | 司机：${vehicle.driverName}`
+      );
     }
+    if (alarm) {
+      lines.push(`告警类型：${getAbnormalTypeLabel(alarm.abnormalType)}`);
+      lines.push(`告警状态：${getAlarmStatusLabel(alarm.status)}`);
+      lines.push(`创建时间：${formatDateTime(alarm.createdAt)}`);
+    }
+    lines.push("──────────────────────────────────");
+    for (const key of PHASE_ORDER) {
+      const items = phaseGroups[key];
+      if (items.length === 0) continue;
+      const def = PHASE_DEFS[key];
+      const duration = formatDuration(items);
+      const operators = getOperators(items);
+      const durationStr = duration ? ` | 持续: ${duration}` : "";
+      const operatorStr =
+        operators.length > 0 ? ` | 负责人: ${operators.join(", ")}` : "";
+      lines.push(`【${def.label}】${items.length}条记录${durationStr}${operatorStr}`);
+      for (const item of items) {
+        lines.push(
+          `  ${formatDateTime(item.timestamp)} ${item.label} - ${item.detail}`
+        );
+      }
+    }
+    lines.push("──────────────────────────────────");
+    lines.push(`生成时间：${formatDateTime(new Date().toISOString())}`);
+    navigator.clipboard.writeText(lines.join("\n"));
   };
 
   return (
@@ -335,7 +508,9 @@ export const IncidentReview = ({
               {firstAbnormalItem ? formatDateTime(firstAbnormalItem.timestamp) : "--"}
             </div>
             {firstAbnormalItem && (
-              <div className="text-red-400 text-xs mt-1">{firstAbnormalItem.label}</div>
+              <div className="text-red-400 text-xs mt-1">
+                {firstAbnormalItem.label}
+              </div>
             )}
           </div>
           <div className="p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
@@ -366,7 +541,9 @@ export const IncidentReview = ({
                   {getAlarmStatusLabel(alarm.status)}
                 </div>
                 {alarm.handler && (
-                  <div className="text-slate-500 text-xs mt-1">处理人：{alarm.handler}</div>
+                  <div className="text-slate-500 text-xs mt-1">
+                    处理人：{alarm.handler}
+                  </div>
                 )}
               </>
             ) : (
@@ -411,97 +588,154 @@ export const IncidentReview = ({
               状态节点
             </div>
             <span className="text-white font-bold">
-              {timelineItems.filter((i) => i.type === "alarm_action").length || (alarm ? 1 : 0)}
+              {timelineItems.filter((i) => i.type === "alarm_action").length ||
+                (alarm ? 1 : 0)}
             </span>
           </div>
         </div>
 
-        {lastCriticalItem && firstAbnormalItem && lastCriticalItem.id !== firstAbnormalItem.id && (
-          <div className="text-xs text-slate-400 flex items-center gap-2">
-            <span>最新关键事件：</span>
-            <span className="text-red-300">{lastCriticalItem.label}</span>
-            <span>·</span>
-            <span className="font-mono">{formatDateTime(lastCriticalItem.timestamp)}</span>
-          </div>
-        )}
+        {lastCriticalItem &&
+          firstAbnormalItem &&
+          lastCriticalItem.id !== firstAbnormalItem.id && (
+            <div className="text-xs text-slate-400 flex items-center gap-2">
+              <span>最新关键事件：</span>
+              <span className="text-red-300">{lastCriticalItem.label}</span>
+              <span>·</span>
+              <span className="font-mono">
+                {formatDateTime(lastCriticalItem.timestamp)}
+              </span>
+            </div>
+          )}
       </div>
 
       <div className="bg-slate-800/50 rounded-lg p-4">
-        <h4 className="text-slate-300 font-medium mb-3 flex items-center gap-2">
-          <Clock className="w-4 h-4 text-slate-400" />
-          事件复盘时间线（最早 → 当前）
-        </h4>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-slate-300 font-medium flex items-center gap-2">
+            <Clock className="w-4 h-4 text-slate-400" />
+            事件复盘时间线（最早 → 当前）
+          </h4>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportReviewChain}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700/60 hover:bg-slate-600/60 text-slate-300 hover:text-white text-xs font-medium transition-colors border border-slate-600/40"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              导出复盘链
+            </button>
+            <div className="flex rounded-lg bg-slate-700/40 border border-slate-600/30 overflow-hidden">
+              <button
+                onClick={() => setViewMode("phase")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "phase"
+                    ? "bg-cyan-500/20 text-cyan-400"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                阶段视图
+              </button>
+              <button
+                onClick={() => setViewMode("timeline")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === "timeline"
+                    ? "bg-cyan-500/20 text-cyan-400"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                时间线视图
+              </button>
+            </div>
+          </div>
+        </div>
+
         {timelineItems.length === 0 ? (
           <div className="text-center py-8 text-slate-500 text-sm">
             暂无事件数据
           </div>
-        ) : (
+        ) : viewMode === "timeline" ? (
           <div className="relative">
             <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-700" />
             <div className="space-y-3">
-              {timelineItems.map((item, index) => {
-                const badge = getTypeBadge(item.type);
-                const isFirst = index === 0;
-                const isLast = index === timelineItems.length - 1;
-                return (
-                  <div key={item.id} className="relative pl-10">
-                    <div
-                      className={`absolute left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center ${getSeverityStyle(
-                        item.severity
-                      )} ${
-                        item.severity === "critical" ? "animate-pulse" : ""
-                      } ${isFirst ? "ring-2 ring-emerald-500/30" : ""} ${
-                        isLast ? "ring-2 ring-cyan-500/30" : ""
-                      }`}
-                    >
-                      {item.icon}
+              {timelineItems.map((item, index) =>
+                renderTimelineItem(item, index, timelineItems.length)
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {PHASE_ORDER.map((key) => {
+              const items = phaseGroups[key];
+              if (items.length === 0) return null;
+              const def = PHASE_DEFS[key];
+              const isCollapsed = collapsedPhases.has(key);
+              const duration = formatDuration(items);
+              const operators = getOperators(items);
+              return (
+                <div key={key} className={`rounded-lg border ${def.borderColor} ${def.bgColor}`}>
+                  <button
+                    onClick={() => togglePhase(key)}
+                    className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      {isCollapsed ? (
+                        <ChevronRight className={`w-4 h-4 ${def.accentColor}`} />
+                      ) : (
+                        <ChevronDown className={`w-4 h-4 ${def.accentColor}`} />
+                      )}
+                      <div className={`flex items-center gap-2 ${def.accentColor}`}>
+                        {def.icon}
+                        <span className="font-medium text-sm text-white">
+                          {def.label}
+                        </span>
+                      </div>
+                      <span className="text-slate-400 text-xs">
+                        {items.length}条记录
+                      </span>
+                      {duration && (
+                        <span className="text-slate-500 text-xs font-mono">
+                          持续 {duration}
+                        </span>
+                      )}
                     </div>
-                    {isFirst && (
-                      <div className="absolute left-2 -top-1 -translate-x-0.5 -translate-y-full">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium whitespace-nowrap">
-                          起点
-                        </span>
-                      </div>
-                    )}
-                    {isLast && (
-                      <div className="absolute left-2 -bottom-1 -translate-x-0.5 translate-y-full">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-medium whitespace-nowrap">
-                          {durationIsClosed ? "已截止" : "当前"}
-                        </span>
-                      </div>
-                    )}
-                    <div
-                      className={`p-3 rounded-lg border ${getSeverityStyle(item.severity)} ${
-                        isLast ? "ring-2 ring-cyan-500/50" : ""
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className={`px-1.5 py-0.5 text-xs rounded font-medium ${badge.bg} ${badge.text}`}
-                          >
-                            {badge.label}
-                          </span>
-                          <span className="text-white font-medium text-sm">{item.label}</span>
-                          {item.operator && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/30 text-slate-300">
-                              {item.operator}
+                    <div className="flex items-center gap-2">
+                      {operators.length > 0 && (
+                        <div className="flex items-center gap-1">
+                          {operators.slice(0, 3).map((op) => (
+                            <span
+                              key={op}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/40 text-slate-300"
+                            >
+                              {op}
+                            </span>
+                          ))}
+                          {operators.length > 3 && (
+                            <span className="text-[10px] text-slate-500">
+                              +{operators.length - 3}
                             </span>
                           )}
                         </div>
-                        <span className="text-slate-400 text-xs font-mono">
-                          {formatDateTime(item.timestamp)}
-                        </span>
-                      </div>
-                      <p className="text-slate-300 text-sm mb-1">{item.detail}</p>
-                      {item.location && (
-                        <p className="text-slate-500 text-xs">📍 {item.location}</p>
                       )}
+                      <span className="text-slate-500 text-[10px] font-mono">
+                        {formatDateTime(items[0].timestamp)}
+                      </span>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  </button>
+                  {!isCollapsed && (
+                    <div className="px-3 pb-3">
+                      <div className="relative">
+                        <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-700/50" />
+                        <div className="space-y-3">
+                          {items.map((item, index) =>
+                            renderTimelineItem(item, index, items.length)
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

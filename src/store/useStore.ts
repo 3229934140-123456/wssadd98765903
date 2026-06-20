@@ -13,6 +13,7 @@ import {
   FollowUpRecord,
   ReminderChangeLog,
   ReminderChangeKind,
+  TakeoverRecord,
 } from "../types";
 import {
   mockVehicles,
@@ -38,6 +39,7 @@ interface AppStore {
   disposalActions: Record<string, DisposalAction[]>;
   followUpRecords: FollowUpRecord[];
   reminderChangeLogs: ReminderChangeLog[];
+  takeoverRecords: TakeoverRecord[];
   currentShift: {
     name: string;
     operator: string;
@@ -76,6 +78,7 @@ interface AppStore {
     remarks: string
   ) => void;
   addHandoverFollowUp: (itemId: string, person: string, note: string) => void;
+  addTakeover: (alarmId: string, toOperator: string) => void;
   toggleSound: () => void;
   refreshData: () => void;
 }
@@ -128,6 +131,7 @@ export const useStore = create<AppStore>((set, get) => ({
   disposalActions: loadFromStorage("disposalActions", {}),
   followUpRecords: loadFromStorage("followUpRecords", []),
   reminderChangeLogs: loadFromStorage("reminderChangeLogs", []),
+  takeoverRecords: loadFromStorage("takeoverRecords", []),
   currentShift: getCurrentShift(),
   soundEnabled: true,
 
@@ -211,7 +215,7 @@ export const useStore = create<AppStore>((set, get) => ({
       });
     }
 
-    if (reminderKind && reminderKind !== "KEPT") {
+    if (reminderKind) {
       const oldLabel = existingAlarm.nextReminder
         ? formatDateTime(existingAlarm.nextReminder)
         : "无";
@@ -363,6 +367,49 @@ export const useStore = create<AppStore>((set, get) => ({
     );
     set({ handoverItems });
     saveToStorage("handoverItems", handoverItems);
+  },
+
+  addTakeover: (alarmId, toOperator) => {
+    const alarm = get().alarms.find((a) => a.id === alarmId);
+    if (!alarm) return;
+    const now = new Date().toISOString();
+    const fromOperator = alarm.handler || get().currentShift.operator;
+
+    const record: TakeoverRecord = {
+      id: `tk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      alarmId,
+      vehicleId: alarm.vehicleId,
+      fromOperator,
+      toOperator,
+      timestamp: now,
+    };
+    const takeoverRecords = [...get().takeoverRecords, record];
+    set({ takeoverRecords });
+    saveToStorage("takeoverRecords", takeoverRecords);
+
+    const alarms = get().alarms.map((a) =>
+      a.id === alarmId ? { ...a, handler: toOperator } : a
+    );
+    set({ alarms });
+    saveToStorage("alarms", alarms);
+
+    const existingActions = get().disposalActions[alarm.vehicleId] || [];
+    const action: DisposalAction = {
+      id: makeActionId(),
+      vehicleId: alarm.vehicleId,
+      actionType: "STATUS_CHANGE",
+      subType: "TAKEOVER",
+      alarmId,
+      timestamp: now,
+      detail: `接手确认：${fromOperator} → ${toOperator}`,
+      operator: toOperator,
+    };
+    const updated = {
+      ...get().disposalActions,
+      [alarm.vehicleId]: [...existingActions, action],
+    };
+    set({ disposalActions: updated });
+    saveToStorage("disposalActions", updated);
   },
 
   toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),

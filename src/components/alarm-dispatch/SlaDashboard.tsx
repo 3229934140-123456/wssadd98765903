@@ -11,10 +11,12 @@ import {
   Ticket,
   MessageSquare,
   CheckCircle2,
-  XCircle,
   Megaphone,
   UserCheck,
   DoorClosed,
+  CheckSquare,
+  Square,
+  ListChecks,
 } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "../../store/useStore";
@@ -99,6 +101,10 @@ export const SlaDashboard = () => {
   const [activeFollowUp, setActiveFollowUp] = useState<{ alarmId: string; result: FollowUpResult } | null>(null);
   const [followUpDetail, setFollowUpDetail] = useState("");
 
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchSelected, setBatchSelected] = useState<Set<string>>(new Set());
+  const [batchDetail, setBatchDetail] = useState("");
+
   const buildTierData = (tierKey: SlaTierKey) => {
     return alarms
       .filter((a) => {
@@ -179,6 +185,31 @@ export const SlaDashboard = () => {
     setFollowUpDetail("");
   };
 
+  const handleBatchUrge = () => {
+    const detail = batchDetail.trim();
+    batchSelected.forEach((alarmId) => {
+      addFollowUp(alarmId, "URGED", detail, QC_CONTACT);
+    });
+    setBatchSelected(new Set());
+    setBatchDetail("");
+    setBatchMode(false);
+  };
+
+  const toggleBatchSelect = (alarmId: string) => {
+    setBatchSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(alarmId)) next.delete(alarmId);
+      else next.add(alarmId);
+      return next;
+    });
+  };
+
+  const selectAllQc = () => {
+    const qcRows = buildTierData("qc_pending");
+    const allIds = qcRows.map((r) => r.alarm.id);
+    setBatchSelected(new Set(allIds));
+  };
+
   const getResultLabel = (r: FollowUpResult) =>
     FOLLOWUP_OPTIONS.find((o) => o.value === r)?.label || r;
 
@@ -231,6 +262,7 @@ export const SlaDashboard = () => {
         {TIERS.map((tier) => {
           const rows = buildTierData(tier.key);
           const isExpanded = expandedTier === tier.key;
+          const isQcTier = tier.key === "qc_pending";
           return (
             <div
               key={tier.key}
@@ -248,6 +280,24 @@ export const SlaDashboard = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
+                  {isQcTier && rows.length > 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBatchMode(!batchMode);
+                        setBatchSelected(new Set());
+                        setBatchDetail("");
+                      }}
+                      className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-all ${
+                        batchMode
+                          ? "bg-orange-500/30 text-orange-300 border border-orange-500/30"
+                          : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                      }`}
+                    >
+                      <ListChecks className="w-3 h-3" />
+                      批量催办
+                    </button>
+                  )}
                   <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${tier.color} ${tier.textColor}`}>
                     {rows.length}
                   </span>
@@ -266,147 +316,248 @@ export const SlaDashboard = () => {
                       暂无本层级的升级项
                     </div>
                   ) : (
-                    rows.map((row) => {
-                      if (!row.vehicle) return null;
-                      const isUrged = row.itemFollowUps.some((f) => f.result === "URGED");
-                      const isClosed = row.itemFollowUps.some((f) => f.result === "CLOSED");
-                      const qcOverdue = tier.key === "qc_pending" && row.overdue;
-                      const timeColor = row.overdue ? "text-red-400" : "text-amber-400";
-                      return (
-                        <div
-                          key={row.alarm.id}
-                          className="p-3 rounded-lg bg-slate-800/70 border border-slate-700"
-                        >
-                          <div className="flex items-start justify-between mb-2 flex-wrap gap-2">
-                            <div
-                              className="flex items-center gap-2 flex-wrap cursor-pointer"
-                              onClick={() => setSelectedVehicleId(row.vehicle!.id)}
-                            >
-                              <Truck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                              <span
-                                className="text-white font-bold font-mono text-sm"
-                                style={{ fontFamily: "JetBrains Mono, monospace" }}
-                              >
-                                {row.vehicle.plateNumber}
+                    <>
+                      {batchMode && isQcTier && (
+                        <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-xs text-orange-300">
+                              <ListChecks className="w-3.5 h-3.5" />
+                              <span className="font-semibold">
+                                已选 {batchSelected.size} / {rows.length} 辆
                               </span>
-                              <span className="px-1.5 py-0.5 text-xs rounded bg-cyan-500/10 text-cyan-400 font-mono">
-                                {row.vehicle.tripNo}
-                              </span>
-                              <span
-                                className="px-1.5 py-0.5 text-xs rounded font-semibold"
-                                style={{
-                                  backgroundColor: `${getAbnormalTypeColor(row.alarm.abnormalType)}20`,
-                                  color: getAbnormalTypeColor(row.alarm.abnormalType),
-                                }}
-                              >
-                                {getAbnormalTypeLabel(row.alarm.abnormalType)}
-                              </span>
-                              <span
-                                className="px-1.5 py-0.5 text-xs rounded font-semibold"
-                                style={{
-                                  backgroundColor: `${getAlarmStatusColor(row.alarm.status)}20`,
-                                  color: getAlarmStatusColor(row.alarm.status),
-                                }}
-                              >
-                                {getAlarmStatusLabel(row.alarm.status)}
-                              </span>
-                              {qcOverdue && (
-                                <span className="px-1.5 py-0.5 text-xs rounded font-bold bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
-                                  催办中
-                                </span>
-                              )}
-                              {isUrged && !qcOverdue && (
-                                <span className="px-1.5 py-0.5 text-xs rounded font-semibold bg-orange-500/20 text-orange-400">
-                                  已催办
-                                </span>
-                              )}
-                              {isClosed && (
-                                <span className="px-1.5 py-0.5 text-xs rounded font-semibold bg-emerald-500/20 text-emerald-400 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  已关闭
-                                </span>
-                              )}
                             </div>
-                            <div
-                              className={`px-2 py-1 rounded-md text-xs font-bold font-mono ${
-                                row.overdue ? "bg-red-500/20" : "bg-slate-700"
-                              } ${timeColor}`}
-                            >
-                              {qcOverdue && isUrged
-                                ? "催办中"
-                                : tier.key === "qc_pending" && !row.overdue
-                                ? `SLA ${formatMinutesRemaining(row.minutesRemaining)}`
-                                : formatMinutesRemaining(row.minutesRemaining)}
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={selectAllQc}
+                                className="text-[10px] text-orange-300 hover:text-orange-200 underline"
+                              >
+                                全选
+                              </button>
+                              <button
+                                onClick={() => setBatchSelected(new Set())}
+                                className="text-[10px] text-slate-400 hover:text-slate-200"
+                              >
+                                清空
+                              </button>
                             </div>
                           </div>
-
-                          <div className="grid grid-cols-2 gap-y-1 gap-x-3 text-xs text-slate-400 mb-2">
-                            <span className="flex items-center gap-1">
-                              <User className="w-3 h-3 text-slate-500" />
-                              <span className="text-slate-500">司机：</span>
-                              <span className="text-slate-300">
-                                {row.vehicle.driverName} {row.vehicle.driverPhone}
-                              </span>
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <MapPin className="w-3 h-3 text-slate-500" />
-                              <span className="text-slate-500">线路：</span>
-                              <span className="text-slate-300">{row.vehicle.route}</span>
-                            </span>
-                            <span className="flex items-center gap-1 col-span-2">
-                              <ShieldAlert className="w-3 h-3 text-slate-500" />
-                              <span className="text-slate-500">跟进对象：</span>
-                              <span className="text-slate-300">{row.owner}</span>
-                            </span>
+                          <textarea
+                            value={batchDetail}
+                            onChange={(e) => setBatchDetail(e.target.value)}
+                            placeholder="统一催办说明（选填）..."
+                            className="w-full px-2 py-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white placeholder-slate-500 focus:border-orange-500 focus:outline-none resize-none"
+                            rows={2}
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setBatchMode(false);
+                                setBatchSelected(new Set());
+                                setBatchDetail("");
+                              }}
+                              className="text-xs text-slate-400 hover:text-slate-200"
+                            >
+                              取消
+                            </button>
+                            <button
+                              onClick={handleBatchUrge}
+                              disabled={batchSelected.size === 0}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-orange-500 text-white hover:bg-orange-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <Megaphone className="w-3.5 h-3.5" />
+                              统一催办 ({batchSelected.size})
+                            </button>
                           </div>
-
-                          {row.itemFollowUps.length > 0 && (
-                            <div className="mb-2 p-2 bg-slate-900/40 rounded-md">
-                              <div className="text-[10px] text-slate-500 mb-1">
-                                跟进历史（{row.itemFollowUps.length}）
-                              </div>
-                              {row.itemFollowUps.slice(0, 3).map((f) => {
-                                const opt = FOLLOWUP_OPTIONS.find((o) => o.value === f.result);
-                                return (
-                                  <div
-                                    key={f.id}
-                                    className="text-[11px] text-slate-300 mb-1 flex items-start gap-1.5"
+                        </div>
+                      )}
+                      {rows.map((row) => {
+                        if (!row.vehicle) return null;
+                        const isUrged = row.itemFollowUps.some((f) => f.result === "URGED");
+                        const isClosed = row.itemFollowUps.some((f) => f.result === "CLOSED");
+                        const qcOverdue = tier.key === "qc_pending" && row.overdue;
+                        const timeColor = row.overdue ? "text-red-400" : "text-amber-400";
+                        const isSelected = batchSelected.has(row.alarm.id);
+                        return (
+                          <div
+                            key={row.alarm.id}
+                            className={`p-3 rounded-lg border transition-all ${
+                              isSelected && batchMode
+                                ? "bg-orange-500/10 border-orange-500/30"
+                                : "bg-slate-800/70 border border-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between mb-2 flex-wrap gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {batchMode && isQcTier && (
+                                  <button
+                                    onClick={() => toggleBatchSelect(row.alarm.id)}
+                                    className="flex-shrink-0"
                                   >
-                                    <span
-                                      className={`px-1 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
-                                        opt?.color || "bg-slate-600 text-white"
-                                      }`}
-                                    >
-                                      {getResultLabel(f.result)}
+                                    {isSelected ? (
+                                      <CheckSquare className="w-4 h-4 text-orange-400" />
+                                    ) : (
+                                      <Square className="w-4 h-4 text-slate-500 hover:text-slate-300" />
+                                    )}
+                                  </button>
+                                )}
+                                <div
+                                  className="flex items-center gap-2 flex-wrap cursor-pointer"
+                                  onClick={() => setSelectedVehicleId(row.vehicle!.id)}
+                                >
+                                  <Truck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                                  <span
+                                    className="text-white font-bold font-mono text-sm"
+                                    style={{ fontFamily: "JetBrains Mono, monospace" }}
+                                  >
+                                    {row.vehicle.plateNumber}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 text-xs rounded bg-cyan-500/10 text-cyan-400 font-mono">
+                                    {row.vehicle.tripNo}
+                                  </span>
+                                  <span
+                                    className="px-1.5 py-0.5 text-xs rounded font-semibold"
+                                    style={{
+                                      backgroundColor: `${getAbnormalTypeColor(row.alarm.abnormalType)}20`,
+                                      color: getAbnormalTypeColor(row.alarm.abnormalType),
+                                    }}
+                                  >
+                                    {getAbnormalTypeLabel(row.alarm.abnormalType)}
+                                  </span>
+                                  <span
+                                    className="px-1.5 py-0.5 text-xs rounded font-semibold"
+                                    style={{
+                                      backgroundColor: `${getAlarmStatusColor(row.alarm.status)}20`,
+                                      color: getAlarmStatusColor(row.alarm.status),
+                                    }}
+                                  >
+                                    {getAlarmStatusLabel(row.alarm.status)}
+                                  </span>
+                                  {qcOverdue && (
+                                    <span className="px-1.5 py-0.5 text-xs rounded font-bold bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+                                      催办中
                                     </span>
-                                    <span className="text-slate-400 font-mono flex-shrink-0">
-                                      {formatDateTime(f.timestamp).slice(5)}
+                                  )}
+                                  {isUrged && !qcOverdue && (
+                                    <span className="px-1.5 py-0.5 text-xs rounded font-semibold bg-orange-500/20 text-orange-400">
+                                      已催办
                                     </span>
-                                    <span className="text-slate-400">{f.operator}</span>
-                                    <span className="text-slate-200">{f.detail}</span>
-                                  </div>
-                                );
-                              })}
+                                  )}
+                                  {isClosed && (
+                                    <span className="px-1.5 py-0.5 text-xs rounded font-semibold bg-emerald-500/20 text-emerald-400 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      已关闭
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div
+                                className={`px-2 py-1 rounded-md text-xs font-bold font-mono ${
+                                  row.overdue ? "bg-red-500/20" : "bg-slate-700"
+                                } ${timeColor}`}
+                              >
+                                {qcOverdue && isUrged
+                                  ? "催办中"
+                                  : tier.key === "qc_pending" && !row.overdue
+                                  ? `SLA ${formatMinutesRemaining(row.minutesRemaining)}`
+                                  : formatMinutesRemaining(row.minutesRemaining)}
+                              </div>
                             </div>
-                          )}
 
-                          {activeFollowUp?.alarmId === row.alarm.id ? (
-                            <div className="p-2 bg-slate-900/60 rounded-md border border-slate-600 space-y-2">
-                              <div className="text-xs text-slate-300">登记跟进结果</div>
-                              <textarea
-                                value={followUpDetail}
-                                onChange={(e) => setFollowUpDetail(e.target.value)}
-                                placeholder="补充说明（选填）..."
-                                className="w-full px-2 py-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none resize-none"
-                                rows={2}
-                              />
+                            <div className="grid grid-cols-2 gap-y-1 gap-x-3 text-xs text-slate-400 mb-2">
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3 text-slate-500" />
+                                <span className="text-slate-500">司机：</span>
+                                <span className="text-slate-300">
+                                  {row.vehicle.driverName} {row.vehicle.driverPhone}
+                                </span>
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-slate-500" />
+                                <span className="text-slate-500">线路：</span>
+                                <span className="text-slate-300">{row.vehicle.route}</span>
+                              </span>
+                              <span className="flex items-center gap-1 col-span-2">
+                                <ShieldAlert className="w-3 h-3 text-slate-500" />
+                                <span className="text-slate-500">跟进对象：</span>
+                                <span className="text-slate-300">{row.owner}</span>
+                              </span>
+                            </div>
+
+                            {row.itemFollowUps.length > 0 && (
+                              <div className="mb-2 p-2 bg-slate-900/40 rounded-md">
+                                <div className="text-[10px] text-slate-500 mb-1">
+                                  跟进历史（{row.itemFollowUps.length}）
+                                </div>
+                                {row.itemFollowUps.slice(0, 3).map((f) => {
+                                  const opt = FOLLOWUP_OPTIONS.find((o) => o.value === f.result);
+                                  return (
+                                    <div
+                                      key={f.id}
+                                      className="text-[11px] text-slate-300 mb-1 flex items-start gap-1.5"
+                                    >
+                                      <span
+                                        className={`px-1 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
+                                          opt?.color || "bg-slate-600 text-white"
+                                        }`}
+                                      >
+                                        {getResultLabel(f.result)}
+                                      </span>
+                                      <span className="text-slate-400 font-mono flex-shrink-0">
+                                        {formatDateTime(f.timestamp).slice(5)}
+                                      </span>
+                                      <span className="text-slate-400">{f.operator}</span>
+                                      <span className="text-slate-200">{f.detail}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {!batchMode && activeFollowUp?.alarmId === row.alarm.id ? (
+                              <div className="p-2 bg-slate-900/60 rounded-md border border-slate-600 space-y-2">
+                                <div className="text-xs text-slate-300">登记跟进结果</div>
+                                <textarea
+                                  value={followUpDetail}
+                                  onChange={(e) => setFollowUpDetail(e.target.value)}
+                                  placeholder="补充说明（选填）..."
+                                  className="w-full px-2 py-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none resize-none"
+                                  rows={2}
+                                />
+                                <div className="flex items-center justify-between">
+                                  <div className="flex gap-1 flex-wrap">
+                                    {FOLLOWUP_OPTIONS.map((opt) => (
+                                      <button
+                                        key={opt.value}
+                                        onClick={() => handleRegisterFollowUp(row.alarm.id, opt.value)}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all hover:scale-105 ${opt.color}`}
+                                      >
+                                        {opt.icon}
+                                        {opt.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      setActiveFollowUp(null);
+                                      setFollowUpDetail("");
+                                    }}
+                                    className="text-xs text-slate-400 hover:text-slate-200"
+                                  >
+                                    取消
+                                  </button>
+                                </div>
+                              </div>
+                            ) : !batchMode && (
                               <div className="flex items-center justify-between">
-                                <div className="flex gap-1 flex-wrap">
+                                <div className="flex flex-wrap gap-1">
                                   {FOLLOWUP_OPTIONS.map((opt) => (
                                     <button
                                       key={opt.value}
-                                      onClick={() => handleRegisterFollowUp(row.alarm.id, opt.value)}
-                                      className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all hover:scale-105 ${opt.color}`}
+                                      onClick={() => {
+                                        setActiveFollowUp({ alarmId: row.alarm.id, result: opt.value });
+                                        setFollowUpDetail("");
+                                      }}
+                                      className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all hover:scale-105 opacity-80 hover:opacity-100 ${opt.color}`}
                                     >
                                       {opt.icon}
                                       {opt.label}
@@ -414,49 +565,22 @@ export const SlaDashboard = () => {
                                   ))}
                                 </div>
                                 <button
-                                  onClick={() => {
-                                    setActiveFollowUp(null);
-                                    setFollowUpDetail("");
-                                  }}
-                                  className="text-xs text-slate-400 hover:text-slate-200"
+                                  onClick={() => setSelectedVehicleId(row.vehicle!.id)}
+                                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5"
                                 >
-                                  取消
+                                  处置 →
                                 </button>
                               </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-between">
-                              <div className="flex flex-wrap gap-1">
-                                {FOLLOWUP_OPTIONS.map((opt) => (
-                                  <button
-                                    key={opt.value}
-                                    onClick={() => {
-                                      setActiveFollowUp({ alarmId: row.alarm.id, result: opt.value });
-                                      setFollowUpDetail("");
-                                    }}
-                                    className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold transition-all hover:scale-105 opacity-80 hover:opacity-100 ${opt.color}`}
-                                  >
-                                    {opt.icon}
-                                    {opt.label}
-                                  </button>
-                                ))}
-                              </div>
-                              <button
-                                onClick={() => setSelectedVehicleId(row.vehicle!.id)}
-                                className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5"
-                              >
-                                处置 →
-                              </button>
-                            </div>
-                          )}
+                            )}
 
-                          <div className={`p-2 rounded-md text-[11px] ${tier.bg} ${tier.textColor} font-medium flex items-start gap-1.5 mt-2`}>
-                            <ChevronDown className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                            <span>建议下一步：{row.nextStep}</span>
+                            <div className={`p-2 rounded-md text-[11px] ${tier.bg} ${tier.textColor} font-medium flex items-start gap-1.5 mt-2`}>
+                              <ChevronDown className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                              <span>建议下一步：{row.nextStep}</span>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                    </>
                   )}
                 </div>
               )}
