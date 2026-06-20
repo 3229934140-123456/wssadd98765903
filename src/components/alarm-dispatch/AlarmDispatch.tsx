@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import { AlertTriangle, Send, History, User, Clock } from "lucide-react";
+import { AlertTriangle, Send, History, User, Clock, ChevronDown } from "lucide-react";
 import { useStore } from "../../store/useStore";
 import { StatusSelector } from "./StatusSelector";
-import { ReminderSetter } from "./ReminderSetter";
 import { AlarmStatus } from "../../types";
 import {
   getAbnormalTypeLabel,
@@ -13,12 +12,39 @@ import {
 } from "../../utils/statusUtils";
 import { formatDateTime, getTimeAgo } from "../../utils/dateUtils";
 
+type ReminderValue = { kind: "existing"; label: string; time: string; expired: boolean }
+  | { kind: "picked"; minutes: number | null };
+
+const buildReminderLabel = (minutes: number | null): string => {
+  if (minutes === null) return "不设置提醒";
+  const map: Record<number, string> = {
+    15: "15分钟后",
+    30: "30分钟后",
+    60: "1小时后",
+    120: "2小时后",
+    240: "4小时后",
+    1440: "明天同一时间",
+  };
+  return map[minutes] || `${minutes}分钟后`;
+};
+
+const PRESET_OPTIONS: { label: string; value: number | null }[] = [
+  { label: "不设置提醒", value: null },
+  { label: "15分钟后", value: 15 },
+  { label: "30分钟后", value: 30 },
+  { label: "1小时后", value: 60 },
+  { label: "2小时后", value: 120 },
+  { label: "4小时后", value: 240 },
+  { label: "明天同一时间", value: 1440 },
+];
+
 export const AlarmDispatch = () => {
   const { selectedVehicleId, vehicles, alarms, updateAlarmStatus, currentShift } = useStore();
   const [status, setStatus] = useState<AlarmStatus>("PENDING_VERIFY");
   const [remark, setRemark] = useState("");
-  const [reminderMinutes, setReminderMinutes] = useState<number | null>(null);
+  const [reminder, setReminder] = useState<ReminderValue>({ kind: "picked", minutes: null });
   const [showSuccess, setShowSuccess] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
 
   const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
   const alarm = alarms.find((a) => a.vehicleId === selectedVehicleId);
@@ -27,24 +53,43 @@ export const AlarmDispatch = () => {
     if (alarm) {
       setStatus(alarm.status);
       setRemark(alarm.remark);
-      setReminderMinutes(null);
+      if (alarm.nextReminder) {
+        const expired = new Date(alarm.nextReminder).getTime() < Date.now();
+        setReminder({
+          kind: "existing",
+          label: `原提醒：${formatDateTime(alarm.nextReminder)}${expired ? "（已过期）" : ""}`,
+          time: alarm.nextReminder,
+          expired,
+        });
+      } else {
+        setReminder({ kind: "picked", minutes: null });
+      }
       setShowSuccess(false);
     } else {
       setStatus("PENDING_VERIFY");
       setRemark("");
-      setReminderMinutes(null);
+      setReminder({ kind: "picked", minutes: null });
     }
   }, [selectedVehicleId, alarm?.id]);
 
+  const handlePickReminder = (minutes: number | null) => {
+    setReminder({ kind: "picked", minutes });
+    setReminderOpen(false);
+  };
+
+  const remindMinutesToStore: number | null | undefined =
+    reminder.kind === "existing" ? undefined : reminder.minutes;
+
+  const currentReminderLabel =
+    reminder.kind === "existing"
+      ? reminder.label
+      : buildReminderLabel(reminder.minutes);
+
   const handleSubmit = () => {
     if (!alarm) return;
-
-    updateAlarmStatus(alarm.id, status, remark, reminderMinutes);
+    updateAlarmStatus(alarm.id, status, remark, remindMinutesToStore);
     setShowSuccess(true);
-
-    setTimeout(() => {
-      setShowSuccess(false);
-    }, 3000);
+    setTimeout(() => setShowSuccess(false), 3000);
   };
 
   if (!selectedVehicle) {
@@ -79,15 +124,13 @@ export const AlarmDispatch = () => {
           </h2>
         </div>
         <div className="flex-1 flex items-center justify-center p-4">
-          <div className="text-center">
+          <div className="text-center max-w-xs">
             <div className="w-16 h-16 rounded-full bg-gray-500/20 flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-8 h-8 text-gray-400" />
             </div>
             <h3 className="text-gray-400 font-bold text-lg mb-2">已标记为误报</h3>
             <p className="text-slate-500 text-sm">
-              {selectedVehicle.plateNumber} 的门磁异常已确认为误报，
-              <br />
-              不再计入异常统计。
+              {selectedVehicle.plateNumber} 的门磁异常已确认为误报，不再计入异常统计。
             </p>
             {alarm.remark && (
               <div className="mt-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700 text-left">
@@ -149,9 +192,14 @@ export const AlarmDispatch = () => {
             </div>
           )}
           {alarm.nextReminder && (
-            <div className="mt-2 flex items-center gap-2 text-blue-400 text-sm">
+            <div className={`mt-2 flex items-center gap-2 text-sm ${
+              new Date(alarm.nextReminder).getTime() < Date.now() ? "text-red-400" : "text-blue-400"
+            }`}>
               <Clock className="w-4 h-4" />
               <span>下次提醒：{formatDateTime(alarm.nextReminder)}</span>
+              {new Date(alarm.nextReminder).getTime() < Date.now() && (
+                <span className="text-red-500 font-semibold">已过期！</span>
+              )}
             </div>
           )}
         </div>
@@ -174,7 +222,78 @@ export const AlarmDispatch = () => {
 
         <div>
           <label className="block text-slate-400 text-sm mb-2">下次提醒时间</label>
-          <ReminderSetter value={reminderMinutes} onChange={setReminderMinutes} />
+          <div className="relative">
+            <button
+              onClick={() => setReminderOpen(!reminderOpen)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all ${
+                reminder.kind === "existing" && reminder.expired
+                  ? "border-red-500/50 bg-red-500/10"
+                  : "border-slate-600 bg-slate-700/50 hover:border-slate-500"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Clock className={`w-4 h-4 ${
+                  reminder.kind === "existing" && reminder.expired ? "text-red-400" : "text-blue-400"
+                }`} />
+                <span className={`font-medium ${
+                  reminder.kind === "existing" && reminder.expired
+                    ? "text-red-300"
+                    : "text-white"
+                }`}>
+                  {currentReminderLabel}
+                </span>
+                {reminder.kind === "picked" && reminder.minutes !== null && (
+                  <span className="px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-300">
+                    新设置
+                  </span>
+                )}
+              </div>
+              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${reminderOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {reminderOpen && (
+              <div className="absolute z-20 w-full mt-2 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden">
+                {reminder.kind === "existing" && (
+                  <button
+                    onClick={() => {
+                      if (alarm?.nextReminder) {
+                        const expired = new Date(alarm.nextReminder).getTime() < Date.now();
+                        setReminder({
+                          kind: "existing",
+                          label: `原提醒：${formatDateTime(alarm.nextReminder)}${expired ? "（已过期）" : ""}`,
+                          time: alarm.nextReminder,
+                          expired,
+                        });
+                      }
+                      setReminderOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-cyan-500/10 hover:bg-cyan-500/20 border-b border-slate-700 transition-colors"
+                  >
+                    <span className="text-cyan-300 text-sm">保留原提醒（不修改）</span>
+                    <span className="text-xs text-cyan-400">推荐</span>
+                  </button>
+                )}
+                {PRESET_OPTIONS.map((option) => {
+                  const isActive =
+                    reminder.kind === "picked" && reminder.minutes === option.value;
+                  return (
+                    <button
+                      key={option.label}
+                      onClick={() => handlePickReminder(option.value)}
+                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors ${
+                        isActive ? "bg-slate-700" : ""
+                      }`}
+                    >
+                      <span className="text-white">{option.label}</span>
+                      {isActive && (
+                        <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-slate-500">

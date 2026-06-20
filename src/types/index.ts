@@ -60,6 +60,7 @@ export interface DriverReport {
   imageUrl: string;
   timestamp: string;
   reporterName: string;
+  abnormal: "YES" | "NO";
 }
 
 export interface Alarm {
@@ -106,8 +107,18 @@ export interface AppState {
   alarms: Alarm[];
   handovers: Handover[];
   handoverItems: HandoverItem[];
+  disposalActions: Record<string, DisposalAction[]>;
   currentShift: {
     name: string;
     operator: string;
   };
+}
+
+export interface DisposalAction {
+  id: string;
+  vehicleId: string;
+  actionType: "CALL_DRIVER" | "NOTIFY_WAREHOUSE" | "SEND_MESSAGE";
+  timestamp: string;
+  detail: string;
+  operator: string;
 }

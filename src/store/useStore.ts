@@ -9,6 +9,7 @@ import {
   Handover,
   HandoverItem,
   AlarmStatus,
+  DisposalAction,
 } from "../types";
 import {
   mockVehicles,
@@ -30,6 +31,7 @@ interface AppStore {
   alarms: Alarm[];
   handovers: Handover[];
   handoverItems: HandoverItem[];
+  disposalActions: Record<string, DisposalAction[]>;
   currentShift: {
     name: string;
     operator: string;
@@ -40,7 +42,12 @@ interface AppStore {
     alarmId: string,
     status: AlarmStatus,
     remark: string,
-    remindMinutes: number | null
+    remindMinutes: number | null | undefined
+  ) => void;
+  addDisposalAction: (
+    vehicleId: string,
+    action: "CALL_DRIVER" | "NOTIFY_WAREHOUSE" | "SEND_MESSAGE",
+    detail: string
   ) => void;
   createHandover: (
     outgoingPerson: string,
@@ -56,6 +63,7 @@ interface AppStore {
     }[],
     remarks: string
   ) => void;
+  addHandoverFollowUp: (itemId: string, person: string, note: string) => void;
   toggleSound: () => void;
   refreshData: () => void;
 }
@@ -77,29 +85,55 @@ const saveToStorage = <T>(key: string, value: T): void => {
   }
 };
 
+const buildVehiclesFromAlarms = (baseVehicles: Vehicle[], alarms: Alarm[]): Vehicle[] => {
+  const falseAlarmVehicleIds = alarms
+    .filter((a) => a.status === "FALSE_ALARM")
+    .map((a) => a.vehicleId);
+  return baseVehicles.map((v) =>
+    falseAlarmVehicleIds.includes(v.id)
+      ? { ...v, isAbnormal: false, abnormalType: "NORMAL" as const }
+      : v
+  );
+};
+
+const initialAlarms = loadFromStorage("alarms", mockAlarms);
+const initialVehicles = buildVehiclesFromAlarms(mockVehicles, initialAlarms);
+const initialSelectedVehicleId = initialVehicles.find((v) => v.isAbnormal)?.id || null;
+
 export const useStore = create<AppStore>((set, get) => ({
-  vehicles: mockVehicles,
-  selectedVehicleId: mockVehicles.find((v) => v.isAbnormal)?.id || null,
+  vehicles: initialVehicles,
+  selectedVehicleId: initialSelectedVehicleId,
   doorEvents: mockDoorEvents,
   temperatureRecords: mockTemperatureRecords,
   locationPoints: mockLocationPoints,
   driverReports: mockDriverReports,
-  alarms: loadFromStorage("alarms", mockAlarms),
+  alarms: initialAlarms,
   handovers: loadFromStorage("handovers", []),
   handoverItems: loadFromStorage("handoverItems", []),
+  disposalActions: loadFromStorage("disposalActions", {}),
   currentShift: getCurrentShift(),
   soundEnabled: true,
 
   setSelectedVehicleId: (id) => set({ selectedVehicleId: id }),
 
   updateAlarmStatus: (alarmId, status, remark, remindMinutes) => {
+    const existingAlarm = get().alarms.find((a) => a.id === alarmId);
+    if (!existingAlarm) return;
+
+    let nextReminder: string | null = existingAlarm.nextReminder;
+    if (remindMinutes === null) {
+      nextReminder = null;
+    } else if (remindMinutes !== undefined) {
+      nextReminder = generateReminderTime(remindMinutes);
+    }
+
     const alarms = get().alarms.map((alarm) =>
       alarm.id === alarmId
         ? {
             ...alarm,
             status,
             remark,
-            nextReminder: remindMinutes ? generateReminderTime(remindMinutes) : null,
+            nextReminder,
             handler: get().currentShift.operator,
           }
         : alarm
@@ -116,7 +150,23 @@ export const useStore = create<AppStore>((set, get) => ({
         return v;
       });
       set({ vehicles });
+      saveToStorage("vehicles", JSON.stringify(vehicles));
     }
+  },
+
+  addDisposalAction: (vehicleId, action, detail) => {
+    const newAction: DisposalAction = {
+      id: `da-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      vehicleId,
+      actionType: action,
+      timestamp: new Date().toISOString(),
+      detail,
+      operator: get().currentShift.operator,
+    };
+    const existing = get().disposalActions[vehicleId] || [];
+    const updated = { ...get().disposalActions, [vehicleId]: [...existing, newAction] };
+    set({ disposalActions: updated });
+    saveToStorage("disposalActions", updated);
   },
 
   createHandover: (outgoingPerson, incomingPerson, items, remarks) => {
@@ -149,6 +199,22 @@ export const useStore = create<AppStore>((set, get) => ({
 
     set({ handovers, handoverItems });
     saveToStorage("handovers", handovers);
+    saveToStorage("handoverItems", handoverItems);
+  },
+
+  addHandoverFollowUp: (itemId, person, note) => {
+    const handoverItems = get().handoverItems.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            followUpNotes: [
+              ...item.followUpNotes,
+              `${new Date().toISOString()}|${person}|${note}`,
+            ],
+          }
+        : item
+    );
+    set({ handoverItems });
     saveToStorage("handoverItems", handoverItems);
   },
 

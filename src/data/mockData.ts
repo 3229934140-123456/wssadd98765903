@@ -343,7 +343,8 @@ const generateLocationPoints = (vehicleId: string): LocationPoint[] => {
   return routePoints;
 };
 
-const generateDriverReports = (vehicleId: string): DriverReport[] => {
+const generateDriverReports = (vehicleId: string, abnormalType: string): DriverReport[] => {
+  const isAbnormal = abnormalType !== "NORMAL";
   return [
     {
       id: `${vehicleId}-r1`,
@@ -353,15 +354,19 @@ const generateDriverReports = (vehicleId: string): DriverReport[] => {
         "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=refrigerated%20truck%20interior%20with%20crates%20of%20fresh%20vegetables&image_size=square",
       timestamp: generateDateTime(3),
       reporterName: "刘师傅",
+      abnormal: "NO",
     },
     {
       id: `${vehicleId}-r2`,
       vehicleId,
-      content: "济南服务区临时停靠，检查车厢制冷设备运行正常。",
+      content: isAbnormal
+        ? "在济南段行驶过程中门磁告警，我靠边停车检查了门封条，现场确认车门有5cm未闭合，已经重新关紧并再次锁扣。"
+        : "济南服务区临时停靠，检查车厢制冷设备运行正常。",
       imageUrl:
         "https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=truck%20driver%20checking%20temperature%20control%20panel&image_size=square",
       timestamp: generateDateTime(1.5),
       reporterName: "刘师傅",
+      abnormal: isAbnormal ? "YES" : "NO",
     },
   ];
 };
@@ -377,7 +382,7 @@ vehicleIds.forEach((id) => {
     mockDoorEvents[id] = generateDoorEvents(id, vehicle.abnormalType);
     mockTemperatureRecords[id] = generateTemperatureRecords(id, vehicle.abnormalType);
     mockLocationPoints[id] = generateLocationPoints(id);
-    mockDriverReports[id] = generateDriverReports(id);
+    mockDriverReports[id] = generateDriverReports(id, vehicle.abnormalType);
   }
 });
 

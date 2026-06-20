@@ -18,6 +18,8 @@ export const DisposalPanel = () => {
     locationPoints,
     driverReports,
     alarms,
+    disposalActions,
+    addDisposalAction,
   } = useStore();
 
   const [activeTab, setActiveTab] = useState<"timeline" | "temperature" | "location" | "report" | "review">("review");
@@ -41,13 +43,30 @@ export const DisposalPanel = () => {
   const tempRecords = temperatureRecords[selectedVehicle.id] || [];
   const locations = locationPoints[selectedVehicle.id] || [];
   const reports = driverReports[selectedVehicle.id] || [];
+  const actions = disposalActions[selectedVehicle.id] || [];
   const alarm = alarms.find((a) => a.vehicleId === selectedVehicle.id);
 
-  const statusColor = getAbnormalTypeColor(selectedVehicle.abnormalType);
-  const statusBg = getAbnormalTypeBgColor(selectedVehicle.abnormalType);
+  const isFalseAlarm = alarm?.status === "FALSE_ALARM";
+  const effectivelyAbnormal = selectedVehicle.isAbnormal && !isFalseAlarm;
+
+  const statusColor = effectivelyAbnormal
+    ? getAbnormalTypeColor(selectedVehicle.abnormalType)
+    : isFalseAlarm
+    ? "#6B7280"
+    : getAbnormalTypeColor(selectedVehicle.abnormalType);
+  const statusBg = effectivelyAbnormal
+    ? getAbnormalTypeBgColor(selectedVehicle.abnormalType)
+    : isFalseAlarm
+    ? "bg-gray-500/10"
+    : getAbnormalTypeBgColor(selectedVehicle.abnormalType);
 
   const handleCall = (type: "driver" | "warehouse") => {
     setCalling(type);
+    if (type === "driver") {
+      addDisposalAction(selectedVehicle.id, "CALL_DRIVER", `拨打电话 ${selectedVehicle.driverPhone}（${selectedVehicle.driverName}）`);
+    } else {
+      addDisposalAction(selectedVehicle.id, "NOTIFY_WAREHOUSE", `通知仓库值班人（${selectedVehicle.route} 线路）`);
+    }
     setTimeout(() => {
       setCalling(null);
     }, 3000);
@@ -73,12 +92,17 @@ export const DisposalPanel = () => {
               >
                 {selectedVehicle.plateNumber}
               </h2>
-              {selectedVehicle.isAbnormal && (
+              {effectivelyAbnormal && (
                 <span
-                  className="px-3 py-1 text-sm font-semibold rounded-lg"
+                  className="px-3 py-1 text-sm font-semibold rounded-lg animate-pulse"
                   style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
                 >
                   {getAbnormalTypeLabel(selectedVehicle.abnormalType)}
+                </span>
+              )}
+              {isFalseAlarm && (
+                <span className="px-3 py-1 text-sm font-semibold rounded-lg bg-gray-500/20 text-gray-400">
+                  已确认误报
                 </span>
               )}
             </div>
@@ -100,7 +124,7 @@ export const DisposalPanel = () => {
 
           <div className="flex items-center gap-2">
             <div
-              className={`px-4 py-2 rounded-lg ${statusBg} border ${selectedVehicle.isAbnormal ? "border-red-500/30" : "border-emerald-500/30"}`}
+              className={`px-4 py-2 rounded-lg ${statusBg} border ${effectivelyAbnormal ? "border-red-500/30" : isFalseAlarm ? "border-gray-500/30" : "border-emerald-500/30"}`}
             >
               <div className="text-slate-400 text-xs mb-1">当前温度</div>
               <div
@@ -191,7 +215,14 @@ export const DisposalPanel = () => {
 
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === "review" && (
-          <IncidentReview events={events} tempRecords={tempRecords} locations={locations} alarm={alarm} />
+          <IncidentReview
+            events={events}
+            tempRecords={tempRecords}
+            locations={locations}
+            alarm={alarm}
+            driverReports={reports}
+            disposalActions={actions}
+          />
         )}
         {activeTab === "timeline" && <DoorTimeline events={events} />}
         {activeTab === "temperature" && <TemperatureChart records={tempRecords} />}

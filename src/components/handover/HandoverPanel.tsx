@@ -23,7 +23,15 @@ import {
 } from "../../utils/statusUtils";
 
 export const HandoverPanel = () => {
-  const { alarms, vehicles, handovers, handoverItems, currentShift, createHandover } = useStore();
+  const {
+    alarms,
+    vehicles,
+    handovers,
+    handoverItems,
+    currentShift,
+    createHandover,
+    addHandoverFollowUp,
+  } = useStore();
   const [activeTab, setActiveTab] = useState<"current" | "history">("current");
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null);
@@ -82,14 +90,7 @@ export const HandoverPanel = () => {
   const handleAddFollowUp = (itemId: string) => {
     const note = followUpInputs[itemId]?.trim();
     if (!note) return;
-    const store = useStore.getState();
-    const updatedItems = store.handoverItems.map((item) =>
-      item.id === itemId
-        ? { ...item, followUpNotes: [...item.followUpNotes, `${new Date().toISOString()}|${store.currentShift.operator}|${note}`] }
-        : item
-    );
-    useStore.setState({ handoverItems: updatedItems });
-    try { localStorage.setItem("handoverItems", JSON.stringify(updatedItems)); } catch {}
+    addHandoverFollowUp(itemId, currentShift.operator, note);
     setFollowUpInputs((prev) => ({ ...prev, [itemId]: "" }));
   };
 

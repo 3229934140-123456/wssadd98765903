@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Route, AlertTriangle } from "lucide-react";
 import { Vehicle } from "../../types";
 import { CarrierGroup } from "./CarrierGroup";
+import { useStore } from "../../store/useStore";
 
 interface RouteGroupProps {
   route: string;
@@ -11,7 +12,13 @@ interface RouteGroupProps {
 
 export const RouteGroup = ({ route, vehicles, defaultExpanded = true }: RouteGroupProps) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const abnormalCount = vehicles.filter((v) => v.isAbnormal).length;
+  const alarms = useStore((s) => s.alarms);
+  const falseAlarmIds = new Set(
+    alarms.filter((a) => a.status === "FALSE_ALARM").map((a) => a.vehicleId)
+  );
+  const abnormalCount = vehicles.filter(
+    (v) => v.isAbnormal && !falseAlarmIds.has(v.id)
+  ).length;
 
   const groupedByCarrier = vehicles.reduce((acc, vehicle) => {
     if (!acc[vehicle.carrier]) {

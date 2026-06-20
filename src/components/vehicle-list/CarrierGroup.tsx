@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Building2, AlertTriangle } from "lucide-react";
 import { Vehicle } from "../../types";
 import { VehicleCard } from "./VehicleCard";
+import { useStore } from "../../store/useStore";
 
 interface CarrierGroupProps {
   carrier: string;
@@ -11,11 +12,19 @@ interface CarrierGroupProps {
 
 export const CarrierGroup = ({ carrier, vehicles, defaultExpanded = true }: CarrierGroupProps) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const abnormalCount = vehicles.filter((v) => v.isAbnormal).length;
+  const alarms = useStore((s) => s.alarms);
+  const falseAlarmIds = new Set(
+    alarms.filter((a) => a.status === "FALSE_ALARM").map((a) => a.vehicleId)
+  );
+  const abnormalCount = vehicles.filter(
+    (v) => v.isAbnormal && !falseAlarmIds.has(v.id)
+  ).length;
 
   const sortedVehicles = [...vehicles].sort((a, b) => {
-    if (a.isAbnormal && !b.isAbnormal) return -1;
-    if (!a.isAbnormal && b.isAbnormal) return 1;
+    const aAbn = a.isAbnormal && !falseAlarmIds.has(a.id);
+    const bAbn = b.isAbnormal && !falseAlarmIds.has(b.id);
+    if (aAbn && !bAbn) return -1;
+    if (!aAbn && bAbn) return 1;
     return 0;
   });
 

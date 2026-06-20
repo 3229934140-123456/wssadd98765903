@@ -60,3 +60,20 @@ export const generateReminderTime = (minutesLater: number): string => {
   date.setMinutes(date.getMinutes() + minutesLater);
   return date.toISOString();
 };
+
+export const getMinutesRemaining = (isoTime: string): number => {
+  return Math.floor((new Date(isoTime).getTime() - Date.now()) / 60000);
+};
+
+export const formatMinutesRemaining = (minutes: number): string => {
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const mins = abs % 60;
+  const sign = minutes < 0 ? "已超时" : "剩余";
+  if (hours > 0) return `${sign} ${hours}h${mins}m`;
+  return `${sign} ${mins}m`;
+};
+
+export const getSlaMinutesRemaining = (createdAt: string, limitMinutes: number): number => {
+  return limitMinutes - Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
+};
